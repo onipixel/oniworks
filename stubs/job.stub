@@ -1,0 +1,23 @@
+package jobs
+
+import (
+	"context"
+	"log/slog"
+)
+
+// {{.Name}}Job processes {{.Name}} tasks from the queue.
+type {{.Name}}Job struct {
+	// Add job payload fields here
+	// ID int64 `json:"id"`
+}
+
+func init() {
+	// queue.Register("jobs.{{.Name}}Job", func() queue.Job { return &{{.Name}}Job{} })
+}
+
+// Handle executes the job. Return an error to trigger retry.
+func (j *{{.Name}}Job) Handle(ctx context.Context) error {
+	slog.Info("{{.Name}}Job: processing")
+	// TODO: implement job logic
+	return nil
+}

@@ -1,0 +1,22 @@
+package channels
+
+import (
+	"github.com/oniworks/oniworks/framework/realtime"
+)
+
+// Register{{.Name}}Channel registers the {{.Name}} channel handler on the hub.
+//
+//	channels.Register{{.Name}}Channel(hub)
+func Register{{.Name}}Channel(hub *realtime.Hub) {
+	hub.Channel("{{.NameSnake}}.{id}", func(c *realtime.Conn, e *realtime.Event) error {
+		room := e.Params["id"]
+		// TODO: implement {{.Name}} channel logic
+		return hub.Broadcast("{{.NameSnake}}."+room, map[string]any{
+			"from":    c.UserID,
+			"payload": e.Payload,
+		})
+	})
+
+	// Uncomment to enable presence tracking
+	// hub.Presence("{{.NameSnake}}.{id}")
+}

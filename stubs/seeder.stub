@@ -1,0 +1,17 @@
+package seeders
+
+import (
+	"context"
+
+	"github.com/oniworks/oniworks/framework/database"
+)
+
+// {{.Name}}Seeder seeds the {{.NameSnake}}s table.
+type {{.Name}}Seeder struct{}
+
+// Run inserts seed data into the database.
+func (s *{{.Name}}Seeder) Run(ctx context.Context, db *database.DB) error {
+	return db.Table("{{.NameSnake}}s").Insert(map[string]any{
+		// "name": "Example",
+	})
+}
