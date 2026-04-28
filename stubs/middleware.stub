@@ -1,0 +1,18 @@
+package middleware
+
+import (
+	"net/http"
+
+	onihttp "github.com/onipixel/oniworks/framework/http"
+)
+
+// {{.Name}} is a custom HTTP middleware.
+func {{.Name}}() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TODO: implement {{.Name}} logic
+			_ = onihttp.NewContext(w, r, nil)
+			next.ServeHTTP(w, r)
+		})
+	}
+}

@@ -1,0 +1,16 @@
+package tests
+
+import (
+	"testing"
+
+	onitest "github.com/onipixel/oniworks/framework/testing"
+)
+
+func Test{{.Name}}(t *testing.T) {
+	app := onitest.NewApp(t)
+	defer app.Close()
+
+	resp := app.GET("/").Send()
+	resp.AssertStatus(200)
+	resp.AssertJSON("message", "Welcome to OniWorks!")
+}

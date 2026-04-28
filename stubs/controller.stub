@@ -1,0 +1,36 @@
+package controllers
+
+import (
+	onihttp "github.com/onipixel/oniworks/framework/http"
+)
+
+// {{.Name}}Controller handles HTTP requests for the {{.Name}} resource.
+type {{.Name}}Controller struct{}
+
+// Index returns a list of {{.Name}} records.
+func (ctrl *{{.Name}}Controller) Index(c *onihttp.Context) error {
+	return c.JSON(200, map[string]any{"data": []any{}})
+}
+
+// Show returns a single {{.Name}} record.
+func (ctrl *{{.Name}}Controller) Show(c *onihttp.Context) error {
+	id := c.Param("id")
+	return c.JSON(200, map[string]any{"id": id})
+}
+
+// Store creates a new {{.Name}} record.
+func (ctrl *{{.Name}}Controller) Store(c *onihttp.Context) error {
+	return c.JSON(201, map[string]any{"message": "created"})
+}
+
+// Update modifies a {{.Name}} record.
+func (ctrl *{{.Name}}Controller) Update(c *onihttp.Context) error {
+	id := c.Param("id")
+	return c.JSON(200, map[string]any{"id": id, "message": "updated"})
+}
+
+// Destroy deletes a {{.Name}} record.
+func (ctrl *{{.Name}}Controller) Destroy(c *onihttp.Context) error {
+	id := c.Param("id")
+	return c.JSON(200, map[string]any{"id": id, "message": "deleted"})
+}

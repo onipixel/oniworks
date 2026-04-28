@@ -1,0 +1,23 @@
+package mail
+
+import (
+	"context"
+
+	"github.com/onipixel/oniworks/framework/mail"
+)
+
+// {{.Name}}Mail sends the "{{.Name}}" email.
+type {{.Name}}Mail struct {
+	To      string
+	Subject string
+	// Add mail-specific data here
+}
+
+// Send delivers the email via the provided Mailer.
+func (m *{{.Name}}Mail) Send(ctx context.Context, mailer *mail.Mailer) error {
+	return mailer.NewMessage(ctx).
+		To(m.To).
+		Subject(m.Subject).
+		View("{{.NameSnake}}.html", m).
+		Send()
+}

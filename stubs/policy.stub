@@ -1,0 +1,42 @@
+package policies
+
+import "github.com/onipixel/oniworks/framework/roles"
+
+// {{.Name}}Policy defines authorization rules for {{.Name}} resources.
+type {{.Name}}Policy struct{}
+
+// Before runs before all policy checks. Return nil to continue.
+func (p *{{.Name}}Policy) Before(user any, action string) *bool {
+	return nil
+}
+
+// View determines if the user can view a {{.Name}}.
+func (p *{{.Name}}Policy) View(user any, resource any) bool {
+	return true
+}
+
+// Create determines if the user can create a {{.Name}}.
+func (p *{{.Name}}Policy) Create(user any) bool {
+	u, ok := user.(interface{ HasRole(string) bool })
+	if !ok {
+		return false
+	}
+	return u.HasRole("admin") || u.HasRole("editor")
+}
+
+// Update determines if the user can update a {{.Name}}.
+func (p *{{.Name}}Policy) Update(user any, resource any) bool {
+	return p.Create(user)
+}
+
+// Delete determines if the user can delete a {{.Name}}.
+func (p *{{.Name}}Policy) Delete(user any, resource any) bool {
+	u, ok := user.(interface{ HasRole(string) bool })
+	if !ok {
+		return false
+	}
+	return u.HasRole("admin")
+}
+
+// ensure roles is used
+var _ = roles.NewManager()
