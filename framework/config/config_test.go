@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/oniworks/oniworks/framework/config"
+	"github.com/onipixel/oniworks/framework/config"
 )
 
 func TestConfigSetGet(t *testing.T) {

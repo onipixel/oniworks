@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oniworks/oniworks/framework/queue"
-	"github.com/oniworks/oniworks/framework/queue/drivers"
+	"github.com/onipixel/oniworks/framework/queue"
+	"github.com/onipixel/oniworks/framework/queue/drivers"
 )
 
 // ─── Test jobs ────────────────────────────────────────────────────

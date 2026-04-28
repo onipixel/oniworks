@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // RateLimitConfig configures the rate limiter.

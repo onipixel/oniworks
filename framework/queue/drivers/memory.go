@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oniworks/oniworks/framework/queue"
+	"github.com/onipixel/oniworks/framework/queue"
 )
 
 // Memory is a non-durable in-process queue driver. Suitable for development.

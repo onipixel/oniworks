@@ -5,7 +5,7 @@ Thank you for your interest in contributing! Here's how to get started.
 ## Development Setup
 
 ```bash
-git clone https://github.com/oniworks/oniworks
+git clone https://github.com/onipixel/oniworks
 cd oniworks
 go mod download
 go build ./...

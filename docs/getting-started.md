@@ -5,7 +5,7 @@
 OniWorks requires Go 1.22 or later.
 
 ```bash
-go install github.com/oniworks/oniworks/cmd/oni@latest
+go install github.com/onipixel/oniworks/cmd/oni@latest
 ```
 
 ## Create a Project
@@ -56,10 +56,10 @@ With `--frontend` you also get:
 package main
 
 import (
-    "github.com/oniworks/oniworks/framework/app"
-    onihttp "github.com/oniworks/oniworks/framework/http"
-    "github.com/oniworks/oniworks/framework/middleware"
-    "github.com/oniworks/oniworks/framework/routing"
+    "github.com/onipixel/oniworks/framework/app"
+    onihttp "github.com/onipixel/oniworks/framework/http"
+    "github.com/onipixel/oniworks/framework/middleware"
+    "github.com/onipixel/oniworks/framework/routing"
 )
 
 func main() {

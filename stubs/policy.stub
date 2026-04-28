@@ -1,6 +1,6 @@
 package policies
 
-import "github.com/oniworks/oniworks/framework/roles"
+import "github.com/onipixel/oniworks/framework/roles"
 
 // {{.Name}}Policy defines authorization rules for {{.Name}} resources.
 type {{.Name}}Policy struct{}

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
-	"github.com/oniworks/oniworks/framework/routing"
+	onihttp "github.com/onipixel/oniworks/framework/http"
+	"github.com/onipixel/oniworks/framework/routing"
 )
 
 

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/oniworks/oniworks/framework/config"
-	onihttp "github.com/oniworks/oniworks/framework/http"
-	"github.com/oniworks/oniworks/framework/routing"
+	"github.com/onipixel/oniworks/framework/config"
+	onihttp "github.com/onipixel/oniworks/framework/http"
+	"github.com/onipixel/oniworks/framework/routing"
 )
 
 // Application is the central OniWorks application object.

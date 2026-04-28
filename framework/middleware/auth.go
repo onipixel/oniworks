@@ -3,9 +3,9 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/oniworks/oniworks/framework/auth"
-	onihttp "github.com/oniworks/oniworks/framework/http"
-	"github.com/oniworks/oniworks/framework/session"
+	"github.com/onipixel/oniworks/framework/auth"
+	onihttp "github.com/onipixel/oniworks/framework/http"
+	"github.com/onipixel/oniworks/framework/session"
 )
 
 const ctxKeyUser = "_oni_user"

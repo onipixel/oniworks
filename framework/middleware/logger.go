@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // LoggerConfig configures the Logger middleware.

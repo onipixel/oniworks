@@ -17,6 +17,8 @@ event → socket → memory → broadcast → UI
              persist → PostgreSQL (when needed)
 ```
 
+**Repository:** [github.com/onipixel/oniworks](https://github.com/onipixel/oniworks) · Maintained by **[OniPixel](https://github.com/onipixel)**
+
 </div>
 
 ---
@@ -48,7 +50,7 @@ Most Go web libraries give you routing and leave the rest to you. OniWorks gives
 
 ```bash
 # Install the CLI
-go install github.com/oniworks/oniworks/cmd/oni@latest
+go install github.com/onipixel/oniworks/cmd/oni@latest
 
 # Create a new project
 oni new my-app
@@ -64,8 +66,8 @@ oni serve
 package main
 
 import (
-    "github.com/oniworks/oniworks/framework/app"
-    "github.com/oniworks/oniworks/framework/http"
+    "github.com/onipixel/oniworks/framework/app"
+    "github.com/onipixel/oniworks/framework/http"
 )
 
 func main() {
@@ -228,7 +230,7 @@ OniWorks is currently in **alpha**. The core API is stable but may have breaking
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ```bash
-git clone https://github.com/oniworks/oniworks
+git clone https://github.com/onipixel/oniworks
 cd oniworks
 go mod download
 go test ./...

@@ -3,7 +3,7 @@ package mail
 import (
 	"context"
 
-	"github.com/oniworks/oniworks/framework/mail"
+	"github.com/onipixel/oniworks/framework/mail"
 )
 
 // {{.Name}}Mail sends the "{{.Name}}" email.

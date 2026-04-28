@@ -3,7 +3,7 @@ package seeders
 import (
 	"context"
 
-	"github.com/oniworks/oniworks/framework/database"
+	"github.com/onipixel/oniworks/framework/database"
 )
 
 // {{.Name}}Seeder seeds the {{.NameSnake}}s table.

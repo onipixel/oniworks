@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oniworks/oniworks/framework/memory"
+	"github.com/onipixel/oniworks/framework/memory"
 )
 
 // ConnectHandler is called after a WebSocket connection is established and authenticated.

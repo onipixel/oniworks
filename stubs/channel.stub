@@ -1,7 +1,7 @@
 package channels
 
 import (
-	"github.com/oniworks/oniworks/framework/realtime"
+	"github.com/onipixel/oniworks/framework/realtime"
 )
 
 // Register{{.Name}}Channel registers the {{.Name}} channel handler on the hub.

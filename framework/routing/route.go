@@ -1,6 +1,6 @@
 package routing
 
-import onihttp "github.com/oniworks/oniworks/framework/http"
+import onihttp "github.com/onipixel/oniworks/framework/http"
 
 // Route represents a single registered HTTP route.
 type Route struct {

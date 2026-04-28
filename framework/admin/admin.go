@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/oniworks/oniworks/framework/database"
+	"github.com/onipixel/oniworks/framework/database"
 )
 
 // Resource describes a model that the admin panel should expose.

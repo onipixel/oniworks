@@ -1,4 +1,4 @@
-module github.com/oniworks/oniworks
+module github.com/onipixel/oniworks
 
 go 1.25.0
 

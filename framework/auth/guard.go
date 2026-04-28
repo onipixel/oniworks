@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/oniworks/oniworks/framework/session"
+	"github.com/onipixel/oniworks/framework/session"
 	"golang.org/x/crypto/bcrypt"
 )
 

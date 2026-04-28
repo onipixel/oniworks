@@ -4,7 +4,7 @@ package routing
 import (
 	"strings"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // segment represents one path component after splitting on "/".

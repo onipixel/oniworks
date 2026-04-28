@@ -3,7 +3,7 @@ package validation_test
 import (
 	"testing"
 
-	"github.com/oniworks/oniworks/framework/validation"
+	"github.com/onipixel/oniworks/framework/validation"
 )
 
 type RegisterInput struct {

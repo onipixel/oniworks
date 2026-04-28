@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // {{.Name}}Controller handles HTTP requests for the {{.Name}} resource.

@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/oniworks/oniworks/framework/app"
-	onihttp "github.com/oniworks/oniworks/framework/http"
-	"github.com/oniworks/oniworks/framework/logging"
-	"github.com/oniworks/oniworks/framework/middleware"
-	"github.com/oniworks/oniworks/framework/routing"
-	"github.com/oniworks/oniworks/framework/validation"
+	"github.com/onipixel/oniworks/framework/app"
+	onihttp "github.com/onipixel/oniworks/framework/http"
+	"github.com/onipixel/oniworks/framework/logging"
+	"github.com/onipixel/oniworks/framework/middleware"
+	"github.com/onipixel/oniworks/framework/routing"
+	"github.com/onipixel/oniworks/framework/validation"
 )
 
 type CreatePostInput struct {

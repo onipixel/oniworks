@@ -473,8 +473,8 @@ func scaffoldNew(name string, frontend bool) error {
 	fmt.Printf("\nOniWorks app %q created!\n\n", name)
 	fmt.Printf("  cd %s\n", name)
 	fmt.Println("  go mod init your.module/" + name)
-	fmt.Println("  go get github.com/oniworks/oniworks")
-	fmt.Println("  oni serve\n")
+	fmt.Println("  go get github.com/onipixel/oniworks")
+	fmt.Println("  oni serve")
 	return nil
 }
 
@@ -551,10 +551,10 @@ func toSnakeCase(s string) string {
 const mainGoStub = `package main
 
 import (
-	"github.com/oniworks/oniworks/framework/app"
-	"github.com/oniworks/oniworks/framework/middleware"
-	onihttp "github.com/oniworks/oniworks/framework/http"
-	"github.com/oniworks/oniworks/framework/routing"
+	"github.com/onipixel/oniworks/framework/app"
+	"github.com/onipixel/oniworks/framework/middleware"
+	onihttp "github.com/onipixel/oniworks/framework/http"
+	"github.com/onipixel/oniworks/framework/routing"
 )
 
 func main() {

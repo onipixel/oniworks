@@ -14,13 +14,13 @@ event → socket → memory → broadcast → UI
 
 ```bash
 # Install the CLI
-go install github.com/oniworks/oniworks/cmd/oni@latest
+go install github.com/onipixel/oniworks/cmd/oni@latest
 
 # Create a new project
 oni new my-app
 cd my-app
 go mod init example.com/my-app
-go get github.com/oniworks/oniworks
+go get github.com/onipixel/oniworks
 
 # Start the dev server
 oni serve

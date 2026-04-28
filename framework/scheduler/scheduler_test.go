@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oniworks/oniworks/framework/scheduler"
+	"github.com/onipixel/oniworks/framework/scheduler"
 )
 
 func TestEveryFires(t *testing.T) {

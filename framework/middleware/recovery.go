@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // RecoveryConfig configures the Recovery middleware.

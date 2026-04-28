@@ -1,8 +1,8 @@
 package migrations
 
 import (
-	"github.com/oniworks/oniworks/framework/database"
-	"github.com/oniworks/oniworks/framework/migrations"
+	"github.com/onipixel/oniworks/framework/database"
+	"github.com/onipixel/oniworks/framework/migrations"
 )
 
 // Migration{{.Timestamp}} — {{.Name}}

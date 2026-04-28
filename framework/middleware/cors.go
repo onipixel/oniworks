@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // CORSConfig configures the CORS middleware.

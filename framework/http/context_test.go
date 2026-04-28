@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 func makeContext(method, path, body string) (*onihttp.Context, *httptest.ResponseRecorder) {

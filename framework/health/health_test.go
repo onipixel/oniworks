@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/oniworks/oniworks/framework/health"
+	"github.com/onipixel/oniworks/framework/health"
 )
 
 func TestAllPass(t *testing.T) {

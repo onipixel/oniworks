@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	onitest "github.com/oniworks/oniworks/framework/testing"
+	onitest "github.com/onipixel/oniworks/framework/testing"
 )
 
 func Test{{.Name}}(t *testing.T) {

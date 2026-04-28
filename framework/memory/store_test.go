@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oniworks/oniworks/framework/memory"
+	"github.com/onipixel/oniworks/framework/memory"
 )
 
 func newTestStore(t *testing.T) *memory.Store {

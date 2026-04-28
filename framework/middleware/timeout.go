@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // Timeout returns a middleware that cancels the request context after d duration.

@@ -7,7 +7,7 @@ OniWorks ships with a fluent HTTP test client and fake drivers for mail, queues,
 ```go
 import (
     "testing"
-    onitest "github.com/oniworks/oniworks/framework/testing"
+    onitest "github.com/onipixel/oniworks/framework/testing"
 )
 
 func TestCreatePost(t *testing.T) {

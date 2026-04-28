@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oniworks/oniworks/framework/frontend"
+	"github.com/onipixel/oniworks/framework/frontend"
 )
 
 func TestViteTagDevMode(t *testing.T) {

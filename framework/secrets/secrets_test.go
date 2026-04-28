@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oniworks/oniworks/framework/secrets"
+	"github.com/onipixel/oniworks/framework/secrets"
 )
 
 func TestGenerateKey(t *testing.T) {

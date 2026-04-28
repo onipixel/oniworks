@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
-	"github.com/oniworks/oniworks/framework/middleware"
-	"github.com/oniworks/oniworks/framework/routing"
+	onihttp "github.com/onipixel/oniworks/framework/http"
+	"github.com/onipixel/oniworks/framework/middleware"
+	"github.com/onipixel/oniworks/framework/routing"
 )
 
 // helper: build a single-route test server

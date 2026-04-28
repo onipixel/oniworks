@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 var gzipPool = sync.Pool{

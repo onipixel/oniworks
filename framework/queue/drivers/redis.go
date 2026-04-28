@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/oniworks/oniworks/framework/queue"
+	"github.com/onipixel/oniworks/framework/queue"
 )
 
 const deadQueue = "oni:queue:dead"

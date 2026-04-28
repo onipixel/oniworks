@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oniworks/oniworks/framework/memory"
+	"github.com/onipixel/oniworks/framework/memory"
 )
 
 const presencePrefix = "oni:presence:"

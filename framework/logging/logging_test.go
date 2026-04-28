@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oniworks/oniworks/framework/logging"
+	"github.com/onipixel/oniworks/framework/logging"
 )
 
 func TestJSONFormat(t *testing.T) {

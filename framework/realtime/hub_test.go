@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/oniworks/oniworks/framework/realtime"
+	"github.com/onipixel/oniworks/framework/realtime"
 )
 
 // dialWS connects a gorilla WebSocket client to a test server URL.

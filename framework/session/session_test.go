@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/oniworks/oniworks/framework/session"
-	"github.com/oniworks/oniworks/framework/session/drivers"
+	"github.com/onipixel/oniworks/framework/session"
+	"github.com/onipixel/oniworks/framework/session/drivers"
 )
 
 func newManager() *session.Manager {

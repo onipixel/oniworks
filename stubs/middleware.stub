@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	onihttp "github.com/oniworks/oniworks/framework/http"
+	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // {{.Name}} is a custom HTTP middleware.
