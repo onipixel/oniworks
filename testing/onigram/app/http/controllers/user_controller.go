@@ -56,6 +56,7 @@ func (ctrl *UserController) Update(c *onihttp.Context) error {
 	var req struct {
 		Username string `json:"username"`
 		Bio      string `json:"bio"`
+		Website  string `json:"website"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.Abort(400, "invalid request body")
@@ -68,6 +69,7 @@ func (ctrl *UserController) Update(c *onihttp.Context) error {
 	if req.Bio != "" {
 		updates["bio"] = req.Bio
 	}
+	updates["website"] = req.Website
 
 	if err := database.Table("users").Where("id = ?", userID).Update(updates); err != nil {
 		return err
@@ -173,6 +175,27 @@ func (ctrl *UserController) Unfollow(c *onihttp.Context) error {
 }
 
 // Search finds users matching a query string.
+// Suggestions returns users the current user is not yet following.
+// GET /api/users/suggestions
+func (ctrl *UserController) Suggestions(c *onihttp.Context) error {
+	uid, _ := c.Get("user_id")
+	userID, _ := uid.(int64)
+
+	var users []models.User
+	err := database.Raw(`
+		SELECT id, username, COALESCE(bio,'') AS bio, COALESCE(avatar_path,'') AS avatar_path FROM users
+		WHERE id != $1
+		AND id NOT IN (SELECT following_id FROM follows WHERE follower_id = $1)
+		ORDER BY RANDOM() LIMIT 6`, userID).All(&users)
+	if err != nil {
+		return err
+	}
+	if users == nil {
+		users = []models.User{}
+	}
+	return c.JSON(200, map[string]any{"users": users})
+}
+
 // GET /api/users/search?q=...
 func (ctrl *UserController) Search(c *onihttp.Context) error {
 	q := c.Query("q")

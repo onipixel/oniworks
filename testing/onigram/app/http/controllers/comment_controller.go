@@ -10,6 +10,65 @@ import (
 	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
+// Delete removes a comment (owner only).
+// DELETE /api/comments/:id
+func (ctrl *CommentController) Delete(c *onihttp.Context) error {
+	uid, _ := c.Get("user_id")
+	userID, _ := uid.(int64)
+
+	commentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return c.Abort(400, "invalid comment id")
+	}
+
+	var comment models.Comment
+	if err := database.Table("comments").Where("id = ?", commentID).First(&comment); err != nil {
+		return c.Abort(404, "comment not found")
+	}
+	if comment.UserID != userID {
+		return c.Abort(403, "forbidden")
+	}
+
+	_ = database.Table("comments").Where("id = ?", commentID).Delete()
+	return c.JSON(200, map[string]any{"message": "deleted"})
+}
+
+// LikeComment likes a comment.
+// POST /api/comments/:id/like
+func (ctrl *CommentController) LikeComment(c *onihttp.Context) error {
+	uid, _ := c.Get("user_id")
+	userID, _ := uid.(int64)
+
+	commentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return c.Abort(400, "invalid comment id")
+	}
+
+	_ = database.Raw(
+		`INSERT INTO comment_likes (user_id, comment_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		userID, commentID, time.Now(),
+	).Exec()
+
+	count, _ := database.Table("comment_likes").Where("comment_id = ?", commentID).Count()
+	return c.JSON(200, map[string]any{"like_count": count})
+}
+
+// UnlikeComment removes a comment like.
+// DELETE /api/comments/:id/like
+func (ctrl *CommentController) UnlikeComment(c *onihttp.Context) error {
+	uid, _ := c.Get("user_id")
+	userID, _ := uid.(int64)
+
+	commentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return c.Abort(400, "invalid comment id")
+	}
+
+	_ = database.Table("comment_likes").Where("user_id = ? AND comment_id = ?", userID, commentID).Delete()
+	count, _ := database.Table("comment_likes").Where("comment_id = ?", commentID).Count()
+	return c.JSON(200, map[string]any{"like_count": count})
+}
+
 // CommentController manages comments on posts.
 type CommentController struct {
 	NotifyFn func(notif *models.Notification)
@@ -103,7 +162,7 @@ func (ctrl *CommentController) Store(c *onihttp.Context) error {
 			UserID:    post.UserID,
 			ActorID:   userID,
 			Type:      models.NotifComment,
-			PostID:    postID,
+			PostID:    &postID,
 			Read:      false,
 			CreatedAt: time.Now(),
 		}

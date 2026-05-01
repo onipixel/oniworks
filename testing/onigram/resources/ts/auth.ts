@@ -23,7 +23,7 @@ export async function loadUser(): Promise<User | null> {
 export function logout() {
   localStorage.removeItem('og_token')
   currentUser = null
-  navigate('/login')
+  location.href = '/login'
 }
 
 export function requireAuth(): boolean {

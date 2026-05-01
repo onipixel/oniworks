@@ -152,6 +152,30 @@ func (ctrl *PostController) UserPosts(c *onihttp.Context) error {
 	return c.JSON(200, map[string]any{"posts": posts})
 }
 
+// Explore returns recent public posts for discovery (no follow required).
+// GET /api/explore
+func (ctrl *PostController) Explore(c *onihttp.Context) error {
+	uid, _ := c.Get("user_id")
+	viewerID, _ := uid.(int64)
+
+	page, _ := strconv.Atoi(c.QueryD("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * 30
+
+	posts := make([]models.Post, 0)
+	if err := database.Table("posts").
+		OrderBy("created_at DESC").
+		Limit(30).Offset(offset).
+		All(&posts); err != nil {
+		return err
+	}
+
+	enrichPosts(posts, viewerID)
+	return c.JSON(200, map[string]any{"posts": posts, "page": page})
+}
+
 // enrichPosts loads author info and like counts for a slice of posts.
 // Uses batch queries — no N+1.
 func enrichPosts(posts []models.Post, viewerID int64) {
@@ -198,6 +222,24 @@ func enrichPosts(posts []models.Post, viewerID int64) {
 		for _, lr := range likedRows {
 			if i, ok := idxByID[lr.PostID]; ok {
 				posts[i].IsLiked = true
+			}
+		}
+	}
+
+	// Batch check viewer bookmarks
+	if viewerID != 0 {
+		type bookmarked struct {
+			PostID int64 `db:"post_id"`
+		}
+		var bookmarkRows []bookmarked
+		_ = database.Table("bookmarks").
+			Select("post_id").
+			Where("user_id = ?", viewerID).
+			WhereIn("post_id", ids...).
+			All(&bookmarkRows)
+		for _, br := range bookmarkRows {
+			if i, ok := idxByID[br.PostID]; ok {
+				posts[i].IsBookmarked = true
 			}
 		}
 	}

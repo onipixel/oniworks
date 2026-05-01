@@ -92,11 +92,18 @@ func main() {
 		},
 	})
 	channels.RegisterNotifyChannel(hub)
+	channels.RegisterDMChannel(hub)
 
 	// Build notify callback used by controllers
 	notifyFn := func(notif *models.Notification) {
 		channel := fmt.Sprintf("notify.%d", notif.UserID)
 		_ = hub.Broadcast(channel, notif)
+	}
+
+	// DM notify callback
+	dmNotifyFn := func(userID int64, event string, payload any) {
+		channel := fmt.Sprintf("dm.%d", userID)
+		_ = hub.Broadcast(channel, map[string]any{"event": event, "data": payload})
 	}
 
 	// Set up frontend asset manager
@@ -121,6 +128,9 @@ func main() {
 	likeCtrl := &ctrl.LikeController{NotifyFn: notifyFn}
 	commentCtrl := &ctrl.CommentController{NotifyFn: notifyFn}
 	notifCtrl := &ctrl.NotificationController{}
+	storyCtrl := &ctrl.StoryController{}
+	bookmarkCtrl := &ctrl.BookmarkController{}
+	msgCtrl := &ctrl.MessageController{NotifyFn: dmNotifyFn}
 
 	oni.Use(
 		middleware.Logger(),
@@ -135,9 +145,15 @@ func main() {
 			return nil
 		})
 
-		// Serve uploaded media
+		// Serve uploaded media (posts, avatars, stories)
 		r.Get("/storage/*", func(c *onihttp.Context) error {
 			http.ServeFile(c.Response, c.Request.Request, c.Request.URL.Path[1:])
+			return nil
+		})
+
+		// Serve Vite production build assets (CSS, JS, source maps)
+		r.Get("/assets/*", func(c *onihttp.Context) error {
+			http.ServeFile(c.Response, c.Request.Request, "public/build"+c.Request.URL.Path)
 			return nil
 		})
 
@@ -151,6 +167,7 @@ func main() {
 
 		// User routes
 		r.Group("/api/users", func(g *routing.Group) {
+			g.Get("/suggestions", authMW(userCtrl.Suggestions))
 			g.Get("/search", optionalAuthMW(userCtrl.Search))
 			g.Put("/me", authMW(userCtrl.Update))
 			g.Post("/me/avatar", authMW(userCtrl.UpdateAvatar))
@@ -164,15 +181,43 @@ func main() {
 
 		// Feed & posts
 		r.Get("/api/feed", authMW(postCtrl.Feed))
+		r.Get("/api/explore", optionalAuthMW(postCtrl.Explore))
 		r.Group("/api/posts", func(g *routing.Group) {
 			g.Post("/", authMW(postCtrl.Store))
 			g.Get("/:id", optionalAuthMW(postCtrl.Show))
 			g.Delete("/:id", authMW(postCtrl.Destroy))
 			g.Post("/:id/like", authMW(likeCtrl.Store))
 			g.Delete("/:id/like", authMW(likeCtrl.Destroy))
-			g.Get("/:id/comments", commentCtrl.Index)
+			g.Post("/:id/bookmark", authMW(bookmarkCtrl.Store))
+			g.Delete("/:id/bookmark", authMW(bookmarkCtrl.Destroy))
+			g.Get("/:id/comments", optionalAuthMW(commentCtrl.Index))
 			g.Post("/:id/comments", authMW(commentCtrl.Store))
 		})
+
+		// Comments
+		r.Group("/api/comments", func(g *routing.Group) {
+			g.Delete("/:id", authMW(commentCtrl.Delete))
+			g.Post("/:id/like", authMW(commentCtrl.LikeComment))
+			g.Delete("/:id/like", authMW(commentCtrl.UnlikeComment))
+		})
+
+		// Stories
+		r.Group("/api/stories", func(g *routing.Group) {
+			g.Get("/feed", authMW(storyCtrl.Feed))
+			g.Post("/", authMW(storyCtrl.Store))
+			g.Post("/:id/view", authMW(storyCtrl.MarkViewed))
+			g.Delete("/:id", authMW(storyCtrl.Destroy))
+		})
+
+		// Direct Messages
+		r.Group("/api/messages", func(g *routing.Group) {
+			g.Get("/", authMW(msgCtrl.Inbox))
+			g.Get("/:username", authMW(msgCtrl.Thread))
+			g.Post("/:username", authMW(msgCtrl.Send))
+		})
+
+		// Bookmarks
+		r.Get("/api/bookmarks", authMW(bookmarkCtrl.Index))
 
 		// Notifications
 		r.Group("/api/notifications", func(g *routing.Group) {

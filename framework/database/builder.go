@@ -366,6 +366,19 @@ func (b *Builder) Delete() error {
 	return err
 }
 
+// Exec executes a raw write query (INSERT, UPDATE, DELETE) that returns no rows.
+// Intended for use with Raw() for statements like INSERT ... ON CONFLICT DO NOTHING.
+func (b *Builder) Exec() error {
+	defer b.release()
+	query, args := b.rawSQL, b.rawArgs
+	if query == "" {
+		query, args = b.buildDelete()
+	}
+	query, args = b.normalizePlaceholders(query, args...)
+	_, err := b.db.execContext(b.ctx, query, args...)
+	return err
+}
+
 // Scan executes a raw query and scans a single scalar value.
 func (b *Builder) Scan(dest any) error {
 	defer b.release()

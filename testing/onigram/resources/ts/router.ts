@@ -47,3 +47,7 @@ document.addEventListener('click', (e) => {
 export function start() {
   dispatch(location.pathname)
 }
+
+export function currentPath(): string {
+  return location.pathname
+}

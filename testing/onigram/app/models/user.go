@@ -10,6 +10,7 @@ type User struct {
 	Email        string    `db:"email"         json:"email"`
 	PasswordHash string    `db:"password_hash" json:"-"`
 	Bio          string    `db:"bio"           json:"bio"`
+	Website      string    `db:"website"       json:"website"`
 	AvatarPath   string    `db:"avatar_path"   json:"avatar_path"`
 	CreatedAt    time.Time `db:"created_at"    json:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at"    json:"updated_at"`

@@ -11,7 +11,9 @@ type Comment struct {
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 
-	User *User `db:"-" json:"user,omitempty"`
+	User      *User `db:"-" json:"user,omitempty"`
+	LikeCount int   `db:"-" json:"like_count,omitempty"`
+	IsLiked   bool  `db:"-" json:"is_liked,omitempty"`
 }
 
 func (Comment) TableName() string { return "comments" }

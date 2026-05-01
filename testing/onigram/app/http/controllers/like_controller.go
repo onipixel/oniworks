@@ -53,7 +53,7 @@ func (ctrl *LikeController) Store(c *onihttp.Context) error {
 			UserID:    post.UserID,
 			ActorID:   userID,
 			Type:      models.NotifLike,
-			PostID:    postID,
+			PostID:    &postID,
 			Read:      false,
 			CreatedAt: time.Now(),
 		}
