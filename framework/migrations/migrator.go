@@ -7,14 +7,43 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"sync"
 	"time"
 )
 
+// ─────────────────────────── Global registry ──────────────────────
+
+var (
+	registryMu sync.Mutex
+	registry   []namedMigration
+)
+
+// Register adds a migration to the global application registry.
+// Call this from init() in each migration file so it is auto-discovered.
+//
+//	func init() {
+//	    migrations.Register("20240101000000_create_users_table", &CreateUsersTable{})
+//	}
+func Register(name string, m Migration) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	registry = append(registry, namedMigration{name: name, m: m})
+}
+
+// LoadRegistry copies all globally registered migrations into this Migrator.
+// Call this in main.go after importing migration packages as side-effects.
+func (mg *Migrator) LoadRegistry() {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	mg.migrations = append(mg.migrations, registry...)
+}
+
 // Migration is the interface every migration struct must implement.
+// Up and Down receive a Schema builder — they queue DDL statements by
+// calling schema.Create, schema.Drop, schema.Raw, etc.  The actual SQL
+// is executed (and errors surfaced) by the Migrator, not the migration.
 type Migration interface {
-	// Up applies the migration.
 	Up(s *Schema)
-	// Down rolls back the migration.
 	Down(s *Schema)
 }
 

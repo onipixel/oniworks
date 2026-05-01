@@ -1,29 +1,23 @@
 package migrations
 
 import (
-	"github.com/onipixel/oniworks/framework/database"
-	"github.com/onipixel/oniworks/framework/migrations"
+	onimig "github.com/onipixel/oniworks/framework/migrations"
 )
 
-// Migration{{.Timestamp}} — {{.Name}}
+// Migration{{.Timestamp}} implements the {{.Name}} migration.
 type Migration{{.Timestamp}} struct{}
 
 func init() {
-	migrations.Register(&Migration{{.Timestamp}}{})
+	onimig.Register("{{.Timestamp}}_{{.NameSnake}}", &Migration{{.Timestamp}}{})
 }
 
-func (m *Migration{{.Timestamp}}) Up(schema *migrations.Schema) error {
-	return schema.Create("{{.NameSnake}}", func(t *migrations.Table) {
+func (m *Migration{{.Timestamp}}) Up(s *onimig.Schema) {
+	s.Create("{{.NameSnake}}", func(t *onimig.Table) {
 		t.ID()
 		t.Timestamps()
 	})
 }
 
-func (m *Migration{{.Timestamp}}) Down(schema *migrations.Schema) error {
-	return schema.Drop("{{.NameSnake}}")
+func (m *Migration{{.Timestamp}}) Down(s *onimig.Schema) {
+	s.DropIfExists("{{.NameSnake}}")
 }
-
-func (m *Migration{{.Timestamp}}) Name() string { return "{{.Timestamp}}_{{.NameSnake}}" }
-
-// Ensure db is used if you add columns
-var _ = database.ColumnDef{}

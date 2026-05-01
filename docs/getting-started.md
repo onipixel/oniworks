@@ -2,7 +2,7 @@
 
 ## Installation
 
-OniWorks requires Go 1.22 or later.
+OniWorks requires Go 1.25 or later (`go.mod` uses `go 1.25.0`).
 
 ```bash
 go install github.com/onipixel/oniworks/cmd/oni@latest

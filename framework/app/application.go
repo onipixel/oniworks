@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/onipixel/oniworks/framework/config"
+	fwerrors "github.com/onipixel/oniworks/framework/errors"
 	onihttp "github.com/onipixel/oniworks/framework/http"
 	"github.com/onipixel/oniworks/framework/routing"
 )
@@ -109,11 +110,14 @@ func (a *Application) Use(mw ...onihttp.MiddlewareFunc) *Application {
 func (a *Application) Serve() error {
 	a.Boot()
 
+	// Install debug-aware error handler automatically.
+	a.Router.OnError(fwerrors.Handler(a.IsDebug()))
+
 	cfg := onihttp.ServerConfig{
-		Host:         a.Config.String("server.host", ""),
-		Port:         a.Config.Int("server.port", 8080),
-		TLSCertFile:  a.Config.String("server.tls_cert", ""),
-		TLSKeyFile:   a.Config.String("server.tls_key", ""),
+		Host:        a.Config.String("server.host", ""),
+		Port:        a.Config.Int("server.port", 8080),
+		TLSCertFile: a.Config.String("server.tls_cert", ""),
+		TLSKeyFile:  a.Config.String("server.tls_key", ""),
 	}
 
 	a.kernel = onihttp.NewKernel(cfg, a.Router).WithLogger(a.Logger)

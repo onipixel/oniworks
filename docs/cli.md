@@ -34,6 +34,8 @@ oni make:test PostTest            # tests/post_test.go
 ## Database
 
 ```bash
+oni db:create              # create the application database (reads DB_NAME from .env)
+oni db:drop                # drop the application database (prompts for confirmation)
 oni migrate                # run pending migrations
 oni migrate:rollback       # roll back last batch
 oni migrate:fresh          # drop all + re-run (prompts for confirmation)

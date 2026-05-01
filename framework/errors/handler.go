@@ -1,140 +1,233 @@
-// Package errors provides custom HTTP error pages and centralized error handling.
+// Package errors provides error handling utilities for OniWorks applications.
+// In debug mode it renders a rich HTML error page (similar to Laravel's Ignition)
+// with full stack trace, request details, and highlighted application frames.
+// In production it returns a minimal JSON response.
 package errors
 
 import (
-	"encoding/json"
-	"html/template"
+	"fmt"
+	"html"
 	"net/http"
+	"runtime/debug"
+	"strconv"
 	"strings"
 
 	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
-// HTTPError is a structured HTTP error that carries a status code and message.
-// Handlers return this to trigger a specific HTTP response.
-type HTTPError = onihttp.HTTPError
+// Handler returns a router-compatible error handler.
+// When debugMode is true and the error is not an HTTPError, it renders a
+// detailed HTML page for browser requests or a verbose JSON payload for API
+// requests. For HTTPError values (4xx / known 5xx) it always returns clean JSON.
+func Handler(debugMode bool) func(*onihttp.Context, error) {
+	return func(c *onihttp.Context, err error) {
+		// Walk the chain looking for an HTTPError.
+		var httpErr *onihttp.HTTPError
+		e := err
+		for e != nil {
+			if he, ok := e.(*onihttp.HTTPError); ok {
+				httpErr = he
+				break
+			}
+			type unwrapper interface{ Unwrap() error }
+			if u, ok := e.(unwrapper); ok {
+				e = u.Unwrap()
+			} else {
+				break
+			}
+		}
 
-// New creates a new HTTPError — shorthand for onihttp.NewHTTPError.
-func New(code int, msg string) *HTTPError { return onihttp.NewHTTPError(code, msg) }
+		if httpErr != nil {
+			// Known HTTP errors → always clean JSON (no stack trace needed).
+			_ = c.JSON(httpErr.Code, onihttp.Map{"error": httpErr.Message})
+			return
+		}
 
-// Handler is the application-wide error handler. It inspects the error and
-// sends an appropriate HTTP response (JSON for API requests, HTML otherwise).
-type Handler struct {
-	debug     bool
-	htmlPages map[int]string // status code → HTML template string
-}
+		if !debugMode {
+			// Production: hide internals.
+			_ = c.JSON(http.StatusInternalServerError, onihttp.Map{"error": "internal server error"})
+			return
+		}
 
-// NewHandler creates an error Handler.
-func NewHandler(debug bool) *Handler {
-	h := &Handler{
-		debug:     debug,
-		htmlPages: make(map[int]string),
+		// ── Dev mode: rich error output ─────────────────────────────────────
+		stack := string(debug.Stack())
+		frames := parseStack(stack)
+
+		accept := c.Request.Header.Get("Accept")
+		if strings.Contains(accept, "text/html") {
+			renderHTML(c, err, frames)
+		} else {
+			renderJSON(c, err, frames)
+		}
 	}
-	h.htmlPages[http.StatusNotFound] = defaultNotFoundPage
-	h.htmlPages[http.StatusInternalServerError] = defaultErrorPage
-	return h
 }
 
-// SetPage registers a custom HTML template for a specific status code.
-func (h *Handler) SetPage(code int, tmpl string) {
-	h.htmlPages[code] = tmpl
-}
+// ─────────────────────────── JSON dev response ───────────────────────────────
 
-// Handle is the error dispatch function — use this with Router.OnError.
-func (h *Handler) Handle(c *onihttp.Context, err error) {
-	if err == nil {
-		return
+func renderJSON(c *onihttp.Context, err error, frames []stackFrame) {
+	type jsonFrame struct {
+		Func string `json:"func"`
+		File string `json:"file"`
+		Line int    `json:"line"`
+		App  bool   `json:"app"`
 	}
-
-	code := http.StatusInternalServerError
-	msg := "internal server error"
-
-	if he, ok := err.(*HTTPError); ok {
-		code = he.Code
-		msg = he.Message
+	jFrames := make([]jsonFrame, len(frames))
+	for i, f := range frames {
+		jFrames[i] = jsonFrame{Func: f.Func, File: f.File, Line: f.Line, App: f.IsApp}
 	}
-
-	// JSON for API / AJAX requests
-	if c.IsJSON() || c.IsAJAX() || strings.HasPrefix(c.Path(), "/api/") {
-		_ = c.JSON(code, onihttp.Map{"error": msg, "code": code})
-		return
-	}
-
-	// HTML page
-	if page, ok := h.htmlPages[code]; ok {
-		h.renderPage(c, code, msg, page)
-		return
-	}
-
-	// Generic HTML fallback
-	h.renderPage(c, code, msg, defaultErrorPage)
-}
-
-func (h *Handler) renderPage(c *onihttp.Context, code int, msg, tmplStr string) {
-	tmpl, err := template.New("error").Parse(tmplStr)
-	if err != nil {
-		_ = c.String(code, "%s", msg)
-		return
-	}
-
-	data := map[string]any{
-		"Code":    code,
-		"Message": msg,
-		"Debug":   h.debug,
-	}
-
-	c.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
-	c.Response.WriteHeader(code)
-	_ = tmpl.Execute(c.Response, data)
-}
-
-// JSON writes a plain JSON error — helper for handlers.
-func JSON(c *onihttp.Context, code int, msg string) error {
-	return c.JSON(code, onihttp.Map{"error": msg, "code": code})
-}
-
-// Abort returns an HTTPError that causes the middleware chain to stop.
-func Abort(code int, msg string) error {
-	return onihttp.NewHTTPError(code, msg)
-}
-
-// MustJSON panics with an HTTPError (use inside handlers to short-circuit).
-func MustJSON(c *onihttp.Context, code int, msg string) {
-	_ = JSON(c, code, msg)
-}
-
-// ValidationError writes a 422 Unprocessable Entity response with field errors.
-func ValidationError(c *onihttp.Context, fields map[string][]string) error {
-	return c.JSON(http.StatusUnprocessableEntity, onihttp.Map{
-		"error":  "validation failed",
-		"fields": fields,
+	_ = c.JSON(http.StatusInternalServerError, onihttp.Map{
+		"error":   err.Error(),
+		"type":    fmt.Sprintf("%T", err),
+		"stack":   jFrames,
+		"request": onihttp.Map{"method": c.Method(), "path": c.Path()},
 	})
 }
 
-// FromJSON decodes an error response body.
-func FromJSON(body []byte) (code int, msg string) {
-	var v struct {
-		Code    int    `json:"code"`
-		Message string `json:"error"`
+// ─────────────────────────── HTML dev page ───────────────────────────────────
+
+func renderHTML(c *onihttp.Context, err error, frames []stackFrame) {
+	errType := fmt.Sprintf("%T", err)
+	msg := html.EscapeString(err.Error())
+
+	var frameBuf strings.Builder
+	for _, f := range frames {
+		cls := "fw"
+		if f.IsApp {
+			cls = "app"
+		}
+		frameBuf.WriteString(fmt.Sprintf(
+			`<div class="frame %s"><div class="fn">%s</div><div class="file">%s:<span class="lineno">%d</span></div></div>`,
+			cls,
+			html.EscapeString(f.Func),
+			html.EscapeString(f.File),
+			f.Line,
+		))
 	}
-	if err := json.Unmarshal(body, &v); err == nil {
-		return v.Code, v.Message
-	}
-	return 500, string(body)
+
+	page := strings.NewReplacer(
+		"{{METHOD}}", html.EscapeString(c.Method()),
+		"{{PATH}}", html.EscapeString(c.Path()),
+		"{{TYPE}}", html.EscapeString(errType),
+		"{{MSG}}", msg,
+		"{{FRAMES}}", frameBuf.String(),
+	).Replace(errorPageTemplate)
+
+	c.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+	c.Response.WriteHeader(http.StatusInternalServerError)
+	_, _ = c.Response.Write([]byte(page))
 }
 
-const defaultNotFoundPage = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>404 Not Found — OniWorks</title>
-<style>*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#0f0f0f;color:#e5e5e5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{text-align:center;padding:3rem}h1{font-size:6rem;font-weight:800;color:#ff4757;margin:0}p{font-size:1.25rem;color:#aaa}a{color:#ff4757;text-decoration:none}</style>
-</head>
-<body><div class="card"><h1>404</h1><p>{{.Message}}</p><a href="/">← Back to home</a></div></body>
-</html>`
+// ─────────────────────────── Stack parser ────────────────────────────────────
 
-const defaultErrorPage = `<!DOCTYPE html>
+type stackFrame struct {
+	Func  string
+	File  string
+	Line  int
+	IsApp bool // true when not a stdlib / framework internal frame
+}
+
+func parseStack(raw string) []stackFrame {
+	lines := strings.Split(raw, "\n")
+	var frames []stackFrame
+
+	for i := 0; i+1 < len(lines); i++ {
+		fn := strings.TrimSpace(lines[i])
+		fileLine := strings.TrimSpace(lines[i+1])
+
+		// Stack lines come in pairs: function name, then "\t<file>:<line> +0x…"
+		if !strings.HasPrefix(fileLine, "/") && !strings.Contains(fileLine, ":\\") {
+			continue
+		}
+
+		// Strip "+0x…" suffix
+		if idx := strings.LastIndex(fileLine, " +0x"); idx != -1 {
+			fileLine = fileLine[:idx]
+		}
+
+		// Split file:line
+		file := fileLine
+		lineNum := 0
+		if idx := strings.LastIndex(fileLine, ":"); idx != -1 {
+			if n, err := strconv.Atoi(fileLine[idx+1:]); err == nil {
+				lineNum = n
+				file = fileLine[:idx]
+			}
+		}
+
+		isApp := !isInternalFrame(fn, file)
+		frames = append(frames, stackFrame{
+			Func:  fn,
+			File:  file,
+			Line:  lineNum,
+			IsApp: isApp,
+		})
+		i++ // skip the file line we just consumed
+	}
+	return frames
+}
+
+func isInternalFrame(fn, file string) bool {
+	internals := []string{
+		"runtime/", "runtime.", "testing.",
+		"net/http.", "github.com/onipixel/oniworks/framework/",
+		"github.com/jackc/", "github.com/golang-jwt/",
+	}
+	for _, p := range internals {
+		if strings.Contains(fn, p) || strings.Contains(file, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// ─────────────────────────── HTML template ───────────────────────────────────
+
+const errorPageTemplate = `<!doctype html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>{{.Code}} Error — OniWorks</title>
-<style>*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#0f0f0f;color:#e5e5e5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{text-align:center;padding:3rem}h1{font-size:6rem;font-weight:800;color:#ff4757;margin:0}p{font-size:1.25rem;color:#aaa}</style>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>500 — OniWorks Error</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh}
+.banner{background:#161b22;border-bottom:3px solid #f85149;padding:28px 40px}
+.badge{display:inline-block;background:#f85149;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:.08em;margin-bottom:14px;text-transform:uppercase}
+.err-type{font-size:13px;color:#8b949e;font-family:monospace;margin-bottom:8px}
+.err-msg{font-size:22px;font-weight:600;color:#f85149;line-height:1.4;margin-bottom:12px}
+.req{font-size:13px;color:#8b949e}.req .method{color:#58a6ff;font-weight:600}.req .path{color:#c9d1d9}
+.body{padding:32px 40px;max-width:1100px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;margin-bottom:24px;overflow:hidden}
+.card-head{padding:12px 20px;background:#1c2128;border-bottom:1px solid #30363d;font-size:11px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.1em}
+.frame{padding:10px 20px;border-bottom:1px solid #21262d;font-size:13px}
+.frame:last-child{border-bottom:none}
+.frame.app{background:#1a2233}
+.frame.fw{opacity:.45}
+.fn{color:#d2a8ff;font-family:'Cascadia Code','Fira Code',Consolas,monospace;margin-bottom:3px;word-break:break-all}
+.file{color:#8b949e;font-family:monospace;font-size:12px}
+.lineno{color:#e3b341;font-weight:700}
+.no-frames{padding:20px;color:#8b949e;font-size:13px}
+.legend{padding:14px 20px;border-top:1px solid #21262d;font-size:12px;color:#8b949e;display:flex;gap:20px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.dot.app{background:#388bfd}.dot.fw{background:#444c56}
+</style>
 </head>
-<body><div class="card"><h1>{{.Code}}</h1><p>{{.Message}}</p>{{if .Debug}}<pre style="text-align:left;color:#aaa;font-size:.875rem;margin-top:2rem"></pre>{{end}}</div></body>
+<body>
+<div class="banner">
+  <div class="badge">500 Internal Server Error</div>
+  <div class="err-type">{{TYPE}}</div>
+  <div class="err-msg">{{MSG}}</div>
+  <div class="req"><span class="method">{{METHOD}}</span> <span class="path">{{PATH}}</span></div>
+</div>
+<div class="body">
+  <div class="card">
+    <div class="card-head">Stack Trace</div>
+    {{FRAMES}}
+    <div class="legend">
+      <span><span class="dot app"></span>Application frame</span>
+      <span><span class="dot fw"></span>Framework / stdlib frame</span>
+    </div>
+  </div>
+</div>
+</body>
 </html>`

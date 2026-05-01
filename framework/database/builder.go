@@ -189,7 +189,8 @@ func (b *Builder) WithTrashed() *Builder { b.withTrashed = true; return b }
 func (b *Builder) First(dest any) error {
 	defer b.release()
 	b.limit = 1
-	query, args := b.normalizePlaceholders(b.buildSelect())
+	rawQ, rawA := b.buildSelect()
+	query, args := b.normalizePlaceholders(rawQ, rawA...)
 	rows, err := b.db.queryContext(b.ctx, query, args...)
 	if err != nil {
 		return err
@@ -214,7 +215,8 @@ func (b *Builder) First(dest any) error {
 // All executes the query and scans all rows into dest (must be a pointer to a slice).
 func (b *Builder) All(dest any) error {
 	defer b.release()
-	query, args := b.normalizePlaceholders(b.buildSelect())
+	rawQ, rawA := b.buildSelect()
+	query, args := b.normalizePlaceholders(rawQ, rawA...)
 	rows, err := b.db.queryContext(b.ctx, query, args...)
 	if err != nil {
 		return err
@@ -234,7 +236,8 @@ func (b *Builder) All(dest any) error {
 func (b *Builder) Count() (int64, error) {
 	defer b.release()
 	b.selects = []string{"COUNT(*)"}
-	query, args := b.normalizePlaceholders(b.buildSelect())
+	rawQ, rawA := b.buildSelect()
+	query, args := b.normalizePlaceholders(rawQ, rawA...)
 	rows, err := b.db.queryContext(b.ctx, query, args...)
 	if err != nil {
 		return 0, err
@@ -260,7 +263,8 @@ func (b *Builder) Exists() (bool, error) {
 func (b *Builder) Pluck(col string, dest any) error {
 	defer b.release()
 	b.selects = []string{col}
-	query, args := b.normalizePlaceholders(b.buildSelect())
+	rawQ, rawA := b.buildSelect()
+	query, args := b.normalizePlaceholders(rawQ, rawA...)
 	rows, err := b.db.queryContext(b.ctx, query, args...)
 	if err != nil {
 		return err

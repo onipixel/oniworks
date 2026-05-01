@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"text/template"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/spf13/cobra"
 )
 
@@ -39,13 +42,16 @@ var serveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		port, _ := cmd.Flags().GetString("port")
 		fmt.Printf("Starting OniWorks dev server on :%s\n", port)
+		env := append(os.Environ(), "APP_PORT="+port)
 		if airPath, err := exec.LookPath("air"); err == nil {
 			c := exec.Command(airPath)
 			c.Stdout, c.Stderr = os.Stdout, os.Stderr
+			c.Env = env
 			return c.Run()
 		}
 		c := exec.Command("go", "run", ".")
 		c.Stdout, c.Stderr = os.Stdout, os.Stderr
+		c.Env = env
 		return c.Run()
 	},
 }
@@ -368,6 +374,113 @@ func init() {
 	)
 }
 
+// ─────────────────────────── db:create / db:drop ──────────────────
+
+var dbCreateCmd = &cobra.Command{
+	Use:   "db:create",
+	Short: "Create the application database",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		env := readDotEnv()
+		driver := getEnv(env, "DB_DRIVER", "postgres")
+		name := getEnv(env, "DB_NAME", "")
+		if name == "" {
+			return fmt.Errorf("DB_NAME not set in .env")
+		}
+		host := getEnv(env, "DB_HOST", "127.0.0.1")
+		port := getEnv(env, "DB_PORT", "5432")
+		user := getEnv(env, "DB_USER", "postgres")
+		pass := getEnv(env, "DB_PASSWORD", "")
+
+		switch driver {
+		case "postgres":
+			dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=postgres sslmode=disable", host, port, user, pass)
+			db, err := sql.Open("pgx", dsn)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			if _, err := db.Exec(fmt.Sprintf(`CREATE DATABASE "%s"`, name)); err != nil {
+				if strings.Contains(err.Error(), "already exists") {
+					fmt.Printf("Database %q already exists.\n", name)
+					return nil
+				}
+				return err
+			}
+			fmt.Printf("Database %q created.\n", name)
+		case "mysql":
+			dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/", user, pass, host, port)
+			db, err := sql.Open("mysql", dsn)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			q := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", name)
+			if _, err := db.Exec(q); err != nil {
+				return err
+			}
+			fmt.Printf("Database %q created.\n", name)
+		default:
+			return fmt.Errorf("unsupported DB driver: %s", driver)
+		}
+		return nil
+	},
+}
+
+var dbDropCmd = &cobra.Command{
+	Use:   "db:drop",
+	Short: "Drop the application database",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		env := readDotEnv()
+		driver := getEnv(env, "DB_DRIVER", "postgres")
+		name := getEnv(env, "DB_NAME", "")
+		if name == "" {
+			return fmt.Errorf("DB_NAME not set in .env")
+		}
+		host := getEnv(env, "DB_HOST", "127.0.0.1")
+		port := getEnv(env, "DB_PORT", "5432")
+		user := getEnv(env, "DB_USER", "postgres")
+		pass := getEnv(env, "DB_PASSWORD", "")
+
+		fmt.Printf("WARNING: This will drop database %q. Type 'yes' to continue: ", name)
+		var answer string
+		fmt.Scan(&answer)
+		if strings.TrimSpace(answer) != "yes" {
+			fmt.Println("Aborted.")
+			return nil
+		}
+
+		switch driver {
+		case "postgres":
+			dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=postgres sslmode=disable", host, port, user, pass)
+			db, err := sql.Open("pgx", dsn)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			// Terminate active connections before drop
+			_, _ = db.Exec(fmt.Sprintf(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s'`, name))
+			if _, err := db.Exec(fmt.Sprintf(`DROP DATABASE IF EXISTS "%s"`, name)); err != nil {
+				return err
+			}
+			fmt.Printf("Database %q dropped.\n", name)
+		case "mysql":
+			dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/", user, pass, host, port)
+			db, err := sql.Open("mysql", dsn)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			if _, err := db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", name)); err != nil {
+				return err
+			}
+			fmt.Printf("Database %q dropped.\n", name)
+		default:
+			return fmt.Errorf("unsupported DB driver: %s", driver)
+		}
+		return nil
+	},
+}
+
 // ─────────────────────────── helpers ──────────────────────────────
 
 func runAppCommand(cmd string) error {
@@ -435,6 +548,8 @@ func stubOutputPath(kind, name string) (dir, filename string) {
 		return filepath.Join("app", "policies"), snake + "_policy.go"
 	case "test":
 		return "tests", snake + "_test.go"
+	case "channel":
+		return filepath.Join("app", "channels"), snake + "_channel.go"
 	default:
 		return ".", snake + ".go"
 	}
@@ -460,6 +575,9 @@ func scaffoldNew(name string, frontend bool) error {
 	writeProjectFile(name, ".env", envStub, map[string]any{"AppKey": key, "Name": name})
 	writeProjectFile(name, "config/app.yaml", appYamlStub, map[string]any{"Name": name})
 	writeProjectFile(name, ".gitignore", gitignoreStub, nil)
+
+	// Write migration placeholder so the side-effect import compiles immediately
+	writeProjectFile(name, "database/migrations/migrations.go", migrationsPkgStub, nil)
 
 	if frontend {
 		writeProjectFile(name, "vite.config.ts", viteConfigStub, nil)
@@ -491,6 +609,43 @@ func writeProjectFile(root, path, tmplStr string, data map[string]any) {
 	}
 	defer f.Close()
 	_ = tmpl.Execute(f, data)
+}
+
+// readDotEnv parses the local .env file into a map.
+func readDotEnv() map[string]string {
+	data, err := os.ReadFile(".env")
+	if err != nil {
+		return map[string]string{}
+	}
+	m := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 {
+			continue
+		}
+		k := strings.TrimSpace(line[:idx])
+		v := strings.TrimSpace(line[idx+1:])
+		if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+			v = v[1 : len(v)-1]
+		}
+		m[k] = v
+	}
+	return m
+}
+
+// getEnv returns the value from the env map, falling back to os.Getenv, then def.
+func getEnv(m map[string]string, key, def string) string {
+	if v, ok := m[key]; ok && v != "" {
+		return v
+	}
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 func generateKey(n int) (string, error) {
@@ -551,13 +706,36 @@ func toSnakeCase(s string) string {
 const mainGoStub = `package main
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	_ "{{.Name}}/database/migrations"
+
 	"github.com/onipixel/oniworks/framework/app"
-	"github.com/onipixel/oniworks/framework/middleware"
+	"github.com/onipixel/oniworks/framework/config"
+	"github.com/onipixel/oniworks/framework/database"
 	onihttp "github.com/onipixel/oniworks/framework/http"
+	"github.com/onipixel/oniworks/framework/middleware"
+	"github.com/onipixel/oniworks/framework/migrations"
 	"github.com/onipixel/oniworks/framework/routing"
 )
 
 func main() {
+	// Handle oni CLI sub-commands forwarded by the oni binary (e.g. oni migrate).
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "--oni-cmd=") {
+			cmd := strings.TrimPrefix(arg, "--oni-cmd=")
+			if err := handleOniCmd(cmd); err != nil {
+				fmt.Fprintln(os.Stderr, "oni error:", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	oni := app.New()
 	oni.Load(".env", "config/app.yaml")
 
@@ -576,12 +754,71 @@ func main() {
 		})
 
 		r.Group("/api/v1", func(g *routing.Group) {
-			// r.Use(middleware.Auth())
-			// g.Get("/users", UserController.Index)
+			// Register routes here, e.g.:
+			// g.Get("/users", userCtrl.Index)
 		})
 	})
 
 	oni.Serve()
+}
+
+// handleOniCmd dispatches framework commands (migrate, rollback, etc.) forwarded
+// from the oni CLI binary via the --oni-cmd flag.
+func handleOniCmd(cmd string) error {
+	_ = config.LoadEnv(".env")
+	port, _ := strconv.Atoi(oniEnv("DB_PORT", "5432"))
+	db, err := database.Open(database.Config{
+		Driver:   database.Driver(oniEnv("DB_DRIVER", "postgres")),
+		Host:     oniEnv("DB_HOST", "127.0.0.1"),
+		Port:     port,
+		Name:     oniEnv("DB_NAME", "{{.Name}}"),
+		User:     oniEnv("DB_USER", "postgres"),
+		Password: oniEnv("DB_PASSWORD", ""),
+		SSLMode:  "disable",
+		MaxOpen:  5,
+		MaxIdle:  2,
+	})
+	if err != nil {
+		return fmt.Errorf("database connect: %w", err)
+	}
+	defer db.Close()
+
+	m := migrations.New(db.SQLDB(), string(db.Driver()))
+	m.LoadRegistry()
+
+	ctx := context.Background()
+	switch cmd {
+	case "migrate":
+		return m.Migrate(ctx)
+	case "migrate:rollback":
+		return m.Rollback(ctx)
+	case "migrate:fresh":
+		return m.Fresh(ctx)
+	case "migrate:status":
+		statuses, err := m.Status(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%-60s %s\n", "Migration", "Status")
+		fmt.Println(strings.Repeat("-", 72))
+		for _, s := range statuses {
+			status := "pending"
+			if s.Ran {
+				status = fmt.Sprintf("ran (batch %d)", s.Batch)
+			}
+			fmt.Printf("%-60s %s\n", s.Name, status)
+		}
+	default:
+		fmt.Printf("[oni] command received: %s\n", cmd)
+	}
+	return nil
+}
+
+func oniEnv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 `
 
@@ -689,6 +926,12 @@ const packageJSONStub = `{
     "tailwindcss": "^4.0.0"
   }
 }
+`
+
+const migrationsPkgStub = `// Package migrations registers all application database migrations.
+// Run "oni make:migration <name>" to generate a new migration file.
+// Each generated file auto-registers itself via its init() function.
+package migrations
 `
 
 const tsconfigStub = `{

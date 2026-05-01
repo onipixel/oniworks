@@ -36,3 +36,11 @@ Thumbs.db
 /data/
 /storage/
 *.log
+
+# Testing apps
+testing/**/node_modules/
+testing/**/storage/
+testing/**/public/build/
+testing/**/.env
+testing/**/server.log
+testing/**/server_*.txt

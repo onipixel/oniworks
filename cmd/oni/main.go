@@ -32,6 +32,7 @@ func init() {
 
 	// Database
 	rootCmd.AddCommand(migrateCmd, migrateRollbackCmd, migrateFreshCmd, migrateStatusCmd, dbSeedCmd)
+	rootCmd.AddCommand(dbCreateCmd, dbDropCmd)
 
 	// Routes & config
 	rootCmd.AddCommand(routeListCmd, keyGenerateCmd)

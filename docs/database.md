@@ -5,18 +5,19 @@ OniWorks includes a performant query builder with struct scanning, lifecycle hoo
 ## Connection
 
 ```go
-db, err := database.Open(database.Options{
-    Driver:   "postgres",  // or "mysql"
+db, err := database.Open(database.Config{
+    Driver:   database.DriverPostgres,  // or database.DriverMySQL
     Host:     "127.0.0.1",
     Port:     5432,
-    Database: "myapp",
+    Name:     "myapp",
     User:     "postgres",
     Password: "secret",
-    Pool: database.PoolOptions{
-        MaxOpen: 25,
-        MaxIdle: 5,
-    },
+    SSLMode:  "disable",
+    MaxOpen:  25,
+    MaxIdle:  5,
 })
+// Set as the package-level default so controllers can use database.Table(...)
+database.SetDefault(db)
 ```
 
 ## Query Builder
@@ -79,7 +80,10 @@ err := db.Table("users").Where("id = ?", id).Delete()
 ```go
 count, err := db.Table("users").Where("active = ?", true).Count()
 exists, err := db.Table("users").Where("email = ?", email).Exists()
-emails, err := db.Table("users").Pluck("email")  // []any
+
+// Pluck retrieves a single column into a typed slice
+var emails []string
+err = db.Table("users").Pluck("email", &emails)
 ```
 
 ## Eager Loading (Batch, No N+1)
@@ -102,11 +106,16 @@ err := db.Table("posts").
 
 ```go
 err := db.Transaction(func(tx *database.DB) error {
-    if err := tx.Table("accounts").Where("id = ?", from).Update(database.Map{"balance": gorm.Expr("balance - ?", amount)}); err != nil {
+    // Use raw SQL expressions for arithmetic updates
+    if err := tx.Table("accounts").Where("id = ?", from).
+        Update(database.Map{"balance": tx.Raw("balance - ?", amount)}); err != nil {
         return err  // auto-rollback
     }
-    return tx.Table("accounts").Where("id = ?", to).Update(database.Map{"balance": gorm.Expr("balance + ?", amount)})
+    return tx.Table("accounts").Where("id = ?", to).
+        Update(database.Map{"balance": tx.Raw("balance + ?", amount)})
 })
+// Note: for simple arithmetic, use db.Raw() to build an expression:
+//   db.Table("posts").Where("id = ?", id).Update(database.Map{"view_count": "view_count + 1"})
 ```
 
 ## Lifecycle Hooks
@@ -129,20 +138,28 @@ oni make:migration create_users_table
 ```
 
 ```go
-func (m *Migration) Up(schema *migrations.Schema) error {
-    return schema.Create("users", func(t *migrations.Table) {
+// Migration Up/Down do NOT return an error — they queue DDL statements.
+// The Migrator executes them and handles errors internally.
+func (m *Migration) Up(schema *migrations.Schema) {
+    schema.Create("users", func(t *migrations.Table) {
         t.ID()
         t.String("name", 100)
         t.String("email", 255).Unique()
-        t.String("password", 60)
-        t.Boolean("active").Default("true")
+        t.String("password_hash", 255)
+        t.Boolean("active").Default(true)
         t.Timestamps()
     })
 }
 
-func (m *Migration) Down(schema *migrations.Schema) error {
-    return schema.Drop("users")
+func (m *Migration) Down(schema *migrations.Schema) {
+    schema.DropIfExists("users")
 }
+```
+
+Migrations are auto-registered via `init()` and discovered through a side-effect import in `main.go`:
+
+```go
+import _ "myapp/database/migrations"
 ```
 
 ```bash

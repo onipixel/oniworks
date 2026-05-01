@@ -1,0 +1,20 @@
+app:
+  name: "onigram"
+  env: local
+  debug: true
+  url: "http://localhost:8080"
+
+server:
+  host: ""
+  port: 8080
+
+database:
+  driver: postgres
+  host: "127.0.0.1"
+  port: 5432
+  name: "onigram"
+  user: postgres
+  password: "password"
+  pool:
+    max_open: 25
+    max_idle: 5
