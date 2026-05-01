@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go" alt="Go 1.22+">
+<img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go" alt="Go 1.25+">
 <img src="https://img.shields.io/badge/license-MIT-green?style=flat" alt="MIT License">
 <img src="https://img.shields.io/badge/status-alpha-orange?style=flat" alt="Alpha">
 <img src="https://img.shields.io/badge/PostgreSQL-primary-336791?style=flat&logo=postgresql" alt="PostgreSQL">
@@ -27,22 +27,27 @@ event → socket → memory → broadcast → UI
 
 Most Go web libraries give you routing and leave the rest to you. OniWorks gives you the whole stack:
 
-| Feature | OniWorks |
+| Feature | Status |
 |---|---|
-| HTTP routing + middleware | ✅ |
-| ORM (PostgreSQL + MySQL) | ✅ |
-| Migrations & seeders | ✅ |
-| Auth (JWT + sessions + roles) | ✅ |
-| WebSocket realtime (Oni Socket) | ✅ |
-| Distributed in-memory store (Oni Memory) | ✅ |
-| Queue / background jobs | ✅ |
-| Scheduler / cron | ✅ |
-| Mail / SMTP | ✅ |
-| File storage (local + S3) | ✅ |
-| Auto TLS via Caddy (Oni Deploy) | ✅ |
-| CLI code generator | ✅ |
-| Admin panel | ✅ |
-| Metrics + health checks | ✅ |
+| HTTP routing + middleware | ✅ Stable |
+| ORM — query builder + struct scanner | ✅ Stable |
+| Migrations (schema builder, rollback) | ✅ Stable |
+| Auth (JWT + bcrypt + RBAC) | ✅ Stable |
+| WebSocket realtime (Oni Socket) | ✅ Stable |
+| Distributed in-memory store (Oni Memory) | ✅ Stable |
+| Queue / background jobs | ✅ Stable |
+| Scheduler / cron | ✅ Stable |
+| Mail / SMTP | ✅ Stable |
+| File storage (local + S3) | ✅ Stable |
+| Vite + Tailwind frontend integration | ✅ Stable |
+| Metrics + health checks | ✅ Stable |
+| Auto TLS via Caddy (Oni Deploy) | ✅ Stable |
+| CLI code generation (`oni make:*`) | 🗓 Roadmap v1.1 |
+| NULL-safe database scanner | 🗓 Roadmap v1.1 |
+| Request validation binding (`c.Validate`) | 🗓 Roadmap v1.1 |
+| Pagination helper | 🗓 Roadmap v1.2 |
+| OAuth / social login | 🗓 Roadmap v1.3 |
+| Image processing (resize, WebP) | 🗓 Roadmap v1.4 |
 
 ---
 
@@ -55,9 +60,6 @@ go install github.com/onipixel/oniworks/cmd/oni@latest
 # Create a new project
 oni new my-app
 cd my-app
-
-# Start the dev server
-oni serve
 ```
 
 ## Hello World
@@ -164,17 +166,22 @@ By default it runs in-process. Enable TCP gossip mesh for multi-node sync with a
 ## CLI
 
 ```bash
+# Available today
 oni new <name>              Create a new project
-oni serve                   Start dev server with hot reload
+oni db:create               Create the configured database
+oni db:drop                 Drop the configured database
+oni migrate                 Run pending migrations
+oni migrate:rollback        Rollback last migration batch
+oni migrate:fresh           Drop all tables and re-run all migrations
+oni migrate:status          Show migration status
+
+# Coming in v1.1
 oni make:controller <Name>  Generate a controller
 oni make:model <Name>       Generate a model + migration
 oni make:migration <Name>   Generate a migration file
-oni make:job <Name>         Generate a background job
 oni make:middleware <Name>  Generate middleware
-oni migrate                 Run pending migrations
-oni migrate:rollback        Rollback last migration batch
-oni seed                    Run database seeders
-oni key:generate            Generate application key
+oni make:channel <Name>     Generate a WebSocket channel
+oni db:seed                 Run database seeders
 ```
 
 ---
@@ -197,11 +204,27 @@ Full documentation lives in [`docs/`](docs/):
 
 ---
 
+## Real-world Example — OniGram
+
+OniGram is a full Instagram clone built entirely on OniWorks. It was developed as a stress test to validate the framework against a production-complexity app and surface any gaps.
+
+**What it ships with:**
+- JWT authentication, avatar uploads, user search
+- Posts, likes, comments, bookmarks, hashtags, @mentions
+- Stories with 24-hour expiry and view tracking
+- Real-time direct messages over Oni Socket
+- Explore page with a 3-column grid and lightbox viewer
+- Notifications (like, comment, follow, DM)
+- Responsive SPA with mobile swipe gestures and a desktop sidebar
+- Seeded with 14 users, 70 posts, real images from free CDNs
+
+Source: [`testing/onigram/`](testing/onigram/)
+
+---
+
 ## Examples
 
-- [`examples/basic-api`](examples/basic-api/) — REST API with auth
-- [`examples/realtime-chat`](examples/realtime-chat/) — WebSocket chat app
-- [`examples/fullstack-app`](examples/fullstack-app/) — Full-stack with Vite + Tailwind
+- [`testing/onigram`](testing/onigram/) — Full Instagram clone (OniGram)
 
 ---
 
@@ -210,18 +233,24 @@ Full documentation lives in [`docs/`](docs/):
 OniWorks is currently in **alpha**. The core API is stable but may have breaking changes before v1.0.
 
 - [x] Core HTTP layer
-- [x] ORM + migrations
-- [x] Auth (JWT + sessions + roles)
-- [x] Oni Socket (realtime)
-- [x] Oni Memory (distributed cache)
+- [x] ORM + query builder + migrations
+- [x] Auth (JWT + bcrypt + RBAC)
+- [x] Oni Socket (realtime WebSockets)
+- [x] Oni Memory (distributed cache + pub/sub)
 - [x] Queue + scheduler
-- [x] Mail + storage
-- [x] CLI generator
-- [x] Admin panel
-- [x] Oni Deploy (Caddy + TLS)
+- [x] Mail + file storage
+- [x] Vite + Tailwind frontend integration
+- [x] Metrics + health checks
+- [x] Oni Deploy (Caddy + auto TLS)
+- [x] OniGram — full-stack stress test app
+- [ ] CLI code generation (`oni make:*`)
+- [ ] NULL-safe database scanner
+- [ ] Request validation binding
 - [ ] Full test suite
 - [ ] Oni Memory TCP gossip (multi-node)
 - [ ] Official documentation site
+
+See [ROADMAP.md](ROADMAP.md) for the full prioritised backlog.
 
 ---
 
@@ -235,6 +264,12 @@ cd oniworks
 go mod download
 go test ./...
 ```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ---
 
