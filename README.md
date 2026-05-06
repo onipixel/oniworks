@@ -27,7 +27,7 @@ event → socket → memory → broadcast → UI
 
 Most Go web libraries give you routing and leave the rest to you. OniWorks gives you the whole stack:
 
-| Feature | OniWorks |
+| Feature | Status |
 |---|---|
 | HTTP routing + middleware | ✅ |
 | Query builder (PostgreSQL + MySQL) | ✅ |
@@ -377,6 +377,8 @@ OniWorks v1.1 — all core features stable.
 - [x] Stress test suite
 - [ ] OAuth / social login (v1.3)
 - [ ] Image processing (v1.4)
+
+See [ROADMAP.md](ROADMAP.md) for the full prioritised backlog.
 
 ---
 
