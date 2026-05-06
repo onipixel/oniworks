@@ -1,7 +1,7 @@
-import { users, bookmarks as bookmarksAPI, APIError } from './api.ts'
+import { users, bookmarks as bookmarksAPI, highlights as highlightsAPI, APIError } from './api.ts'
 import { getUser } from './auth.ts'
 import { navigate } from './router.ts'
-import type { User, Post } from './types.ts'
+import type { User, Post, Highlight } from './types.ts'
 import { avatar, escapeHTML, skeleton, errorState } from './feed.ts'
 import { openPostLightbox } from './post.ts'
 
@@ -11,7 +11,8 @@ export async function renderProfile(root: HTMLElement, params: Record<string, st
 
   root.innerHTML = `
   <div class="max-w-3xl mx-auto px-4 py-6">
-    <div id="profile-header" class="mb-6">${headerSkeleton()}</div>
+    <div id="profile-header" class="mb-4">${headerSkeleton()}</div>
+    <div id="highlights-bar" class="mb-4 hidden"></div>
     <div id="profile-tabs" class="hidden border-b border-gray-800 flex gap-8 mb-4 text-sm font-semibold"></div>
     <div id="profile-grid"></div>
   </div>`
@@ -24,8 +25,13 @@ export async function renderProfile(root: HTMLElement, params: Record<string, st
     ])
 
     // ─── Profile Header ───────────────────────────────────────────
-    root.querySelector('#profile-header')!.innerHTML = buildHeader(user, postsRes.posts.length, isOwnProfile)
+    // Use post_count from API if available, else fall back to posts length
+    const postCount = user.post_count ?? postsRes.posts.length
+    root.querySelector('#profile-header')!.innerHTML = buildHeader(user, postCount, isOwnProfile)
     wireHeader(root, user, postsRes.posts, isOwnProfile, me)
+
+    // ─── Highlights Bar ───────────────────────────────────────────
+    loadHighlights(root, username, isOwnProfile)
 
     // ─── Tabs ─────────────────────────────────────────────────────
     const tabsEl = root.querySelector<HTMLElement>('#profile-tabs')!
@@ -36,7 +42,7 @@ export async function renderProfile(root: HTMLElement, params: Record<string, st
     `
 
     // ─── Grid ─────────────────────────────────────────────────────
-    renderGrid(root, postsRes.posts, postsRes.posts)
+    renderGrid(root, postsRes.posts, postsRes.posts, isOwnProfile, username)
 
     tabsEl.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -51,12 +57,12 @@ export async function renderProfile(root: HTMLElement, params: Record<string, st
           root.querySelector('#profile-grid')!.innerHTML = skeleton() + skeleton() + skeleton()
           try {
             const res = await bookmarksAPI.list()
-            renderGrid(root, res.posts, postsRes.posts)
+            renderGrid(root, res.posts, postsRes.posts, isOwnProfile, username)
           } catch {
             root.querySelector('#profile-grid')!.innerHTML = errorState('Failed to load saved posts')
           }
         } else {
-          renderGrid(root, postsRes.posts, postsRes.posts)
+          renderGrid(root, postsRes.posts, postsRes.posts, isOwnProfile, username)
         }
       })
     })
@@ -64,6 +70,134 @@ export async function renderProfile(root: HTMLElement, params: Record<string, st
   } catch {
     root.querySelector('#profile-header')!.innerHTML = errorState('Profile not found')
   }
+}
+
+async function loadHighlights(root: HTMLElement, username: string, isOwnProfile: boolean) {
+  const bar = root.querySelector<HTMLElement>('#highlights-bar')!
+  try {
+    const { highlights } = await highlightsAPI.list(username)
+    if (!highlights.length && !isOwnProfile) return
+    bar.classList.remove('hidden')
+
+    bar.innerHTML = `<div class="flex gap-4 overflow-x-auto pb-1 scrollbar-none" style="scrollbar-width:none"></div>`
+    const row = bar.querySelector('div')!
+
+    highlights.forEach(hl => {
+      const btn = document.createElement('button')
+      btn.className = 'flex flex-col items-center gap-1.5 flex-shrink-0 focus:outline-none'
+      const imgSrc = hl.cover_image_path
+      btn.innerHTML = `
+        <div style="width:64px;height:64px;border-radius:50%;background:#1f2937;display:flex;align-items:center;justify-content:center;overflow:hidden;border:2px solid #374151;">
+          ${imgSrc
+            ? `<img src="${imgSrc}" style="width:64px;height:64px;object-fit:cover;border-radius:50%;" />`
+            : `<div style="width:100%;height:100%;background:linear-gradient(135deg,#7c3aed,#db2777);border-radius:50%;"></div>`}
+        </div>
+        <span class="text-xs text-gray-400 truncate text-center" style="max-width:64px;">${escapeHTML(hl.title)}</span>`
+      btn.addEventListener('click', () => openHighlightViewer(hl))
+      row.appendChild(btn)
+    })
+
+    // Add "New" button for own profile
+    if (isOwnProfile) {
+      const addBtn = document.createElement('button')
+      addBtn.className = 'flex flex-col items-center gap-1.5 flex-shrink-0 focus:outline-none'
+      addBtn.innerHTML = `
+        <div style="width:64px;height:64px;border-radius:50%;border:2px dashed #374151;display:flex;align-items:center;justify-content:center;">
+          <svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        </div>
+        <span class="text-xs text-gray-500" style="max-width:64px;">New</span>`
+      addBtn.addEventListener('click', () => openNewHighlightModal())
+      row.appendChild(addBtn)
+    }
+  } catch { /* non-critical */ }
+}
+
+function openHighlightViewer(hl: Highlight) {
+  if (!hl.stories?.length) return
+  const stories = hl.stories
+  let idx = 0
+
+  const overlay = document.createElement('div')
+  overlay.className = 'fixed inset-0 bg-black z-50 flex items-center justify-center'
+  overlay.innerHTML = `
+    <div class="relative w-full max-w-sm h-full max-h-[95vh] flex flex-col">
+      <div class="flex items-center gap-3 px-3 py-2 z-10">
+        <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-xs font-bold">${escapeHTML(hl.title[0].toUpperCase())}</div>
+        <span class="font-semibold text-sm">${escapeHTML(hl.title)}</span>
+        <div class="flex-1 ml-2 flex gap-1" id="hl-dots"></div>
+      </div>
+      <div class="flex-1 flex items-center justify-center overflow-hidden rounded-2xl bg-gray-900">
+        <img id="hl-img" class="w-full h-full object-contain" />
+      </div>
+      <div class="absolute inset-0 flex" style="top:3rem;">
+        <div id="hl-prev" class="flex-1 cursor-pointer"></div>
+        <div id="hl-next" class="flex-1 cursor-pointer"></div>
+      </div>
+      <button id="hl-close" class="absolute top-3 right-3 text-white text-2xl z-20">✕</button>
+    </div>`
+
+  document.body.appendChild(overlay)
+
+  const show = (i: number) => {
+    idx = Math.max(0, Math.min(i, stories.length - 1))
+    ;(overlay.querySelector<HTMLImageElement>('#hl-img')!).src = stories[idx].image_path
+    overlay.querySelector('#hl-dots')!.innerHTML = stories.map((_, j) =>
+      `<div class="flex-1 h-0.5 rounded-full ${j <= idx ? 'bg-white' : 'bg-gray-600'}"></div>`
+    ).join('')
+  }
+
+  overlay.querySelector('#hl-close')!.addEventListener('click', () => overlay.remove())
+  overlay.querySelector('#hl-prev')!.addEventListener('click', () => { if (idx > 0) show(idx - 1); else overlay.remove() })
+  overlay.querySelector('#hl-next')!.addEventListener('click', () => { if (idx < stories.length - 1) show(idx + 1); else overlay.remove() })
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove() })
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', esc) }
+  })
+
+  show(0)
+}
+
+function openNewHighlightModal() {
+  const overlay = document.createElement('div')
+  overlay.className = 'fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4'
+  overlay.innerHTML = `
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 w-full max-w-sm space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">New Highlight</h3>
+        <button id="nh-close" class="text-gray-400 hover:text-white">✕</button>
+      </div>
+      <p class="text-xs text-gray-500">Give your highlight a name. You can add stories to it from the story viewer.</p>
+      <input id="nh-title" type="text" placeholder="e.g. Travel, Food, Friends..." maxlength="100"
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-purple-500 transition" />
+      <div id="nh-error" class="hidden text-red-400 text-sm"></div>
+      <div class="flex gap-3">
+        <button id="nh-cancel" class="flex-1 border border-gray-700 rounded-xl py-2.5 text-sm hover:bg-gray-800 transition">Cancel</button>
+        <button id="nh-save" class="flex-1 bg-purple-600 hover:bg-purple-700 rounded-xl py-2.5 text-sm font-semibold transition">Create</button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+
+  const close = () => overlay.remove()
+  overlay.querySelector('#nh-close')!.addEventListener('click', close)
+  overlay.querySelector('#nh-cancel')!.addEventListener('click', close)
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
+
+  overlay.querySelector('#nh-save')!.addEventListener('click', async () => {
+    const title = (overlay.querySelector<HTMLInputElement>('#nh-title')!).value.trim()
+    const errEl = overlay.querySelector<HTMLElement>('#nh-error')!
+    if (!title) { errEl.textContent = 'Title is required'; errEl.classList.remove('hidden'); return }
+    const btn = overlay.querySelector<HTMLButtonElement>('#nh-save')!
+    btn.disabled = true; btn.textContent = 'Creating...'
+    try {
+      await highlightsAPI.create(title)
+      close()
+      window.location.reload()
+    } catch (e: any) {
+      errEl.textContent = e?.message ?? 'Failed'
+      errEl.classList.remove('hidden')
+      btn.disabled = false; btn.textContent = 'Create'
+    }
+  })
 }
 
 function buildHeader(user: User, postCount: number, isOwnProfile: boolean): string {
@@ -107,7 +241,6 @@ function buildHeader(user: User, postCount: number, isOwnProfile: boolean): stri
 }
 
 function wireHeader(root: HTMLElement, user: User, _posts: unknown[], _isOwnProfile: boolean, me: User | null) {
-  // Avatar change
   root.querySelector('#avatar-btn')?.addEventListener('click', () => {
     root.querySelector<HTMLInputElement>('#avatar-file')!.click()
   })
@@ -124,15 +257,12 @@ function wireHeader(root: HTMLElement, user: User, _posts: unknown[], _isOwnProf
     }
   })
 
-  // Edit profile
   root.querySelector('#edit-profile-btn')?.addEventListener('click', () =>
     openEditModal(root, user, me!))
 
-  // DM button
   root.querySelector('#dm-btn')?.addEventListener('click', () =>
     navigate(`/messages/${user.username}`))
 
-  // Follow / unfollow
   root.querySelector<HTMLButtonElement>('#follow-btn')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement
     const isFollowing = btn.dataset.following === 'true'
@@ -151,12 +281,11 @@ function wireHeader(root: HTMLElement, user: User, _posts: unknown[], _isOwnProf
     } catch { /* ignore */ }
   })
 
-  // Followers/Following modals
   root.querySelector('#followers-btn')?.addEventListener('click', () => openUserListModal('Followers', user.username, 'followers'))
   root.querySelector('#following-btn')?.addEventListener('click', () => openUserListModal('Following', user.username, 'following'))
 }
 
-function renderGrid(root: HTMLElement, posts: Post[], _all: Post[]) {
+function renderGrid(root: HTMLElement, posts: Post[], _all: Post[], isOwnProfile: boolean, username: string) {
   const grid = root.querySelector<HTMLElement>('#profile-grid')!
   if (posts.length === 0) {
     grid.innerHTML = `<div class="text-center text-gray-500 py-16 text-sm">No posts yet</div>`
@@ -165,12 +294,19 @@ function renderGrid(root: HTMLElement, posts: Post[], _all: Post[]) {
   grid.innerHTML = `<div class="grid grid-cols-3 gap-1"></div>`
   const container = grid.querySelector('div')!
   posts.forEach(post => {
+    const imgSrc = post.images && post.images.length > 0 ? post.images[0].image_path : post.image_path
     const cell = document.createElement('div')
     cell.className = 'relative aspect-square overflow-hidden bg-gray-900 cursor-pointer group'
     cell.innerHTML = `
-      <img src="${post.image_path}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
+      <img src="${imgSrc}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
+      ${post.images && post.images.length > 1
+        ? `<div class="absolute top-2 right-2 bg-black/50 rounded-full p-1"><svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3z"/></svg></div>`
+        : ''}
       <div class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-        <span class="text-white text-sm font-semibold">♥ ${post.like_count ?? 0}</span>
+        <div class="flex items-center gap-3 text-white text-sm font-semibold">
+          <span>♥ ${post.like_count ?? 0}</span>
+          ${post.comment_count ? `<span>💬 ${post.comment_count}</span>` : ''}
+        </div>
       </div>`
     cell.addEventListener('click', () => openPostLightbox(post, posts))
     container.appendChild(cell)
@@ -237,7 +373,7 @@ function openEditModal(_root: HTMLElement, user: User, _me: User) {
   })
 }
 
-// ─── User List Modal (followers / following) ──────────────────────
+// ─── User List Modal ──────────────────────────────────────────────
 
 async function openUserListModal(title: string, username: string, type: 'followers' | 'following') {
   const overlay = document.createElement('div')

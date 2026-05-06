@@ -38,6 +38,16 @@ All notable changes to OniWorks are documented here.
 - **`validation/validator.go`** — `validation.Default()`, `validation.SetDefault(v)`, `validation.Validate(s)` package-level shortcuts.
 - **`realtime/handler.go`** — `hub.Handler()` — returns `onihttp.HandlerFunc` so the WebSocket hub can be mounted on the OniWorks router (`r.Get("/ws", hub.Handler())`).
 
+### OniGram Feature Additions
+
+- **Hashtag system** — `#tags` extracted from post captions on create via regex, stored in `hashtags` + `post_hashtags` tables. New `HashtagController`: `GET /api/hashtags/trending` (ranked by post count) and `GET /api/hashtags/:tag` (paginated feed). Seeder now links existing captions to hashtag rows.
+- **Comment replies** — Added `parent_comment_id` nullable FK on `comments`. `CommentController.Index` returns top-level comments with `replies` nested. `CommentController.Store` accepts `parent_comment_id`. Reply UI in post lightbox: reply button per comment, inline reply indicator, inline reply rendering.
+- **Post carousel** — New `post_images` table for multi-image posts. `PostController.Store` parses `images[0..9]` fields (falls back to single `image`). `enrichPosts` batch-loads carousel images. Feed card shows swipeable carousel with prev/next arrows and dot indicators. Lightbox carousel with the same controls.
+- **Comment count** — `enrichPosts` now batch-loads comment counts alongside like counts. Displayed in feed card action row and post lightbox.
+- **Live trending hashtags** — Feed sidebar and explore sidebar now call `GET /api/hashtags/trending` instead of using hardcoded static data.
+- **`c.Validate()` throughout** — `AuthController.Register` and `Login` now use `validate` struct tags (`required`, `email`, `min`, `alphanum`) instead of manual checks. `CommentController.Store` uses `validate:"required,min=1,max=2200"`.
+- **`mentionify` captions** — Post card captions in the feed now render `#hashtags` and `@mentions` as clickable links (was `escapeHTML` only).
+
 ### Tooling
 
 - **`testing/stress/main.go`** — New stress test suite covering HTTP router (in-process + TCP), Oni Memory (Set/Get/Incr/CAS/Pub-Sub/TTL eviction), PostgreSQL query builder (SELECT/INSERT/UPDATE/Transaction/Paginate/pool saturation), and WebSocket hub (concurrent connections, broadcast delivery, round-trip latency).

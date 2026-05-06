@@ -18,6 +18,7 @@ type User struct {
 	// Computed/loaded fields (not in DB columns)
 	FollowerCount  int  `db:"-" json:"follower_count,omitempty"`
 	FollowingCount int  `db:"-" json:"following_count,omitempty"`
+	PostCount      int  `db:"-" json:"post_count,omitempty"`
 	IsFollowing    bool `db:"-" json:"is_following,omitempty"`
 }
 

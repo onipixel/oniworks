@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -192,6 +193,68 @@ var postContents = []postContent{
 	// zoe_moves
 	{"https://picsum.photos/seed/zoe1/800/1000", "Rehearsal day 47. The piece is finally clicking into place. 🩰 #dance #art #choreography", "zoe_moves"},
 	{"https://picsum.photos/seed/zoe2/900/900", "Rooftop warm-up before the show. NYC skyline as my backdrop. ✨ #dance #nyc #art", "zoe_moves"},
+
+	// ─── Round 2: hashtag + mention rich posts ───────────────────
+	// alex_captures
+	{"https://picsum.photos/seed/alex5/900/1100", "Shot this at blue hour with @omar_lens last weekend — two lenses, one moment. 📷 #photography #bluehour #collaboration #portrait", "alex_captures"},
+	{"https://picsum.photos/seed/alex6/800/800", "Film grain and coffee. My whole personality. ☕ #filmphotography #analog #photography #aesthetic", "alex_captures"},
+	{"https://picsum.photos/seed/alex7/1000/700", "Reflections in puddles after the rain. The best light always comes after the storm. #photography #streetphotography #goldenhour #weather", "alex_captures"},
+
+	// sarah_travels
+	{"https://picsum.photos/seed/sarah5/900/700", "Lost in the medina with @omar_lens as my guide. Best day of this whole trip. 🧡 #travel #morocco #adventure #culture", "sarah_travels"},
+	{"https://picsum.photos/seed/sarah6/800/1000", "Lake Como at dawn. Absolutely nobody around. Just me and the Alps. 🏔️ #travel #italy #landscape #nature #wanderlust", "sarah_travels"},
+	{"https://picsum.photos/seed/sarah7/900/900", "Bali temple at golden hour. Every corner here is a composition. 🌅 #travel #bali #photography #spirituality #goldenhour", "sarah_travels"},
+	{"https://picsum.photos/seed/sarah8/800/600", "Norwegian fjords. No filter needed — this is just Earth being extra. 🇳🇴 #travel #nature #fjords #landscape #scandinavia", "sarah_travels"},
+
+	// mike_eats
+	{"https://picsum.photos/seed/mike5/800/900", "Neapolitan pizza from scratch. 900°F wood fire, 90 seconds. Life-changing. 🍕 #food #pizza #italian #cooking #foodphotography", "mike_eats"},
+	{"https://picsum.photos/seed/mike6/900/800", "Dim sum Sunday with the crew. @bella_bakes brought dessert 👌 #food #dimsum #brunch #foodie #friends", "mike_eats"},
+	{"https://picsum.photos/seed/mike7/800/700", "Sourdough grilled cheese. It's basically a life event. 🧀 #food #sourdough #cooking #grillcheese #foodphotography", "mike_eats"},
+
+	// luna_art
+	{"https://picsum.photos/seed/luna4/900/1100", "Commission piece inspired by @maya_nature's Grand Canyon shots. Surreal to paint real places. 🎨 #art #digitalart #illustration #fanart #nature", "luna_art"},
+	{"https://picsum.photos/seed/luna5/800/800", "Typography exploration. Letters are just art we've given meaning to. #art #typography #design #graphicdesign #illustration", "luna_art"},
+	{"https://picsum.photos/seed/luna6/900/900", "Neon + watercolour hybrid. Still figuring out if this works. What do you think? 🌈 #art #watercolour #neon #experimental #illustration", "luna_art"},
+
+	// jake_fitness
+	{"https://picsum.photos/seed/jake4/800/1000", "Marathon training week 8. 45 miles in the bank. @zoe_moves keeps me motivated. 🏃 #running #marathon #fitness #training #endurance", "jake_fitness"},
+	{"https://picsum.photos/seed/jake5/900/700", "Cold plunge at 5am. Not for everyone but it's for me. 🧊 #fitness #coldplunge #recovery #wellness #mindset", "jake_fitness"},
+	{"https://picsum.photos/seed/jake6/800/900", "Calisthenics park session. You don't need a gym. #fitness #calisthenics #bodyweight #outdoors #streetworkout", "jake_fitness"},
+
+	// emma_style
+	{"https://picsum.photos/seed/emma4/800/1100", "Capsule wardrobe update. 12 pieces, infinite outfits. @zoe_moves modelled these perfectly. 🤍 #fashion #capsulewardrobe #minimalist #ootd #style", "emma_style"},
+	{"https://picsum.photos/seed/emma5/900/900", "Vintage market haul. All under $20. Sustainable fashion is not boring. ♻️ #fashion #vintage #thrift #sustainable #ootd", "emma_style"},
+	{"https://picsum.photos/seed/emma6/800/1000", "Tokyo street style. Every person here is a walking lookbook. 🇯🇵 #fashion #streetstyle #tokyo #japan #travel", "emma_style"},
+
+	// david_builds
+	{"https://picsum.photos/seed/david4/900/700", "Built a timelapse rig for @maya_nature's next dark sky shoot. Can't wait to see the results. ⚙️ #maker #diy #tech #photography #engineering", "david_builds"},
+	{"https://picsum.photos/seed/david5/800/600", "Learning Rust. My brain hurts but in a good way. 🦀 #programming #rust #tech #coding #developer", "david_builds"},
+	{"https://picsum.photos/seed/david6/900/800", "3D printed this enclosure for my home server. Fits perfectly. 🖨️ #maker #3dprinting #homelab #tech #diy", "david_builds"},
+
+	// maya_nature
+	{"https://picsum.photos/seed/maya5/1000/700", "Aurora borealis from the timelapse rig @david_builds made. Worth every freezing hour. 🌌 #nature #aurora #nightphotography #landscape #iceland", "maya_nature"},
+	{"https://picsum.photos/seed/maya6/900/900", "Hummingbird at 1/8000s. Patience is the whole game. 🐦 #nature #wildlife #photography #birdphotography #macro", "maya_nature"},
+	{"https://picsum.photos/seed/maya7/800/600", "Mushroom forest after the rain. This planet is wild. 🍄 #nature #macro #forest #photography #fungi", "maya_nature"},
+
+	// ryu_street
+	{"https://picsum.photos/seed/ryu4/800/1000", "This alley in Osaka appeared in three of my dreams before I actually found it. 🏮 #streetphotography #osaka #japan #travel #photography", "ryu_street"},
+	{"https://picsum.photos/seed/ryu5/900/700", "Hong Kong. The density is the art. 🌆 #streetphotography #hongkong #architecture #cityscape #photography", "ryu_street"},
+	{"https://picsum.photos/seed/ryu6/800/800", "Shot on Tri-X 400. The grain is not a bug, it's the whole point. 🎞️ #filmphotography #analog #streetphotography #blackandwhite #photography", "ryu_street"},
+
+	// bella_bakes
+	{"https://picsum.photos/seed/bella4/800/900", "@mike_eats tested this recipe for me and gave it a 10/10. High praise from him. 🎂 #baking #cake #food #pastry #collaboration", "bella_bakes"},
+	{"https://picsum.photos/seed/bella5/900/800", "Matcha tiramisu. Two cultures, one dessert. 🍵 #baking #matcha #tiramisu #fusion #food #pastry", "bella_bakes"},
+	{"https://picsum.photos/seed/bella6/800/700", "Pain au chocolat. The layers took me two days but look at that cross section. 🥐 #baking #pastry #french #food #croissant", "bella_bakes"},
+
+	// omar_lens
+	{"https://picsum.photos/seed/omar4/900/700", "Shot this while @alex_captures was setting up his tripod. Sometimes the best frame is the candid one. 📸 #photography #portrait #streetphotography #documentary #collaboration", "omar_lens"},
+	{"https://picsum.photos/seed/omar5/800/1000", "Hasselblad + Sahara + no phone signal = bliss. 🏜️ #photography #landscape #desert #analog #travel", "omar_lens"},
+	{"https://picsum.photos/seed/omar6/1000/700", "Erg Chebbi at midnight. The Milky Way was so bright I could read by it. 🌌 #photography #nightphotography #landscape #astro #nature", "omar_lens"},
+
+	// zoe_moves
+	{"https://picsum.photos/seed/zoe3/800/1000", "Opening night. After 47 rehearsals and a lot of @jake_fitness's early morning texts, we're here. 🩰 #dance #performance #art #ballet #theatre", "zoe_moves"},
+	{"https://picsum.photos/seed/zoe4/900/900", "Aerial silk training. Every bruise is a lesson. 🎪 #dance #aerial #fitness #circus #art", "zoe_moves"},
+	{"https://picsum.photos/seed/zoe5/800/800", "Improvisation session in the studio. No plan, just music and movement. 🎵 #dance #improvisation #art #movement #choreography", "zoe_moves"},
 }
 
 // ─── Story images ────────────────────────────────────────────────
@@ -432,6 +495,10 @@ func main() {
 		time.Sleep(5 * time.Millisecond) // avoid duplicate UnixNano
 	}
 
+	// ─── Hashtags ────────────────────────────────────────────────
+	fmt.Println("🏷️  Extracting hashtags from captions...")
+	seedHashtags(postContents, postIDs)
+
 	// ─── Stories ─────────────────────────────────────────────────
 	fmt.Println("📖 Creating stories...")
 	for username, imgURLs := range storyImages {
@@ -623,6 +690,41 @@ func downloadImage(url, dir, filename string) (string, error) {
 		return "", err
 	}
 	return destPath, nil
+}
+
+var seedHashtagRe = regexp.MustCompile(`#(\w+)`)
+
+// seedHashtags extracts hashtags from seeded post captions and links them.
+func seedHashtags(contents []postContent, _ map[string]int64) {
+	// Re-fetch all posts so we can match by caption prefix
+	type postRow struct {
+		ID      int64  `db:"id"`
+		Caption string `db:"caption"`
+	}
+	var allPosts []postRow
+	_ = database.Raw(`SELECT id, caption FROM posts`).All(&allPosts)
+
+	tagged := 0
+	for _, p := range allPosts {
+		matches := seedHashtagRe.FindAllStringSubmatch(strings.ToLower(p.Caption), -1)
+		seen := map[string]bool{}
+		for _, m := range matches {
+			tag := m[1]
+			if seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			_ = database.Raw(`INSERT INTO hashtags (tag) VALUES ($1) ON CONFLICT (tag) DO NOTHING`, tag).Exec()
+			var hid int64
+			if err := database.Raw(`SELECT id FROM hashtags WHERE tag = $1`, tag).Scan(&hid); err != nil || hid == 0 {
+				continue
+			}
+			_ = database.Raw(`INSERT INTO post_hashtags (post_id, hashtag_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, p.ID, hid).Exec()
+			tagged++
+		}
+	}
+	_ = contents // unused, kept for call-site clarity
+	fmt.Printf("  ✓  %d post-hashtag links created\n", tagged)
 }
 
 func must(err error, ctx string) {

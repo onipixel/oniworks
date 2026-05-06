@@ -132,10 +132,22 @@ async function loadThread(root: HTMLElement, username: string) {
       if (e.key === 'Enter') send()
     })
 
-    // Listen for incoming messages
+    // Listen for incoming messages and read receipts
     dmCallbacks.push((data) => {
-      if (data?.data?.from_username === username || data?.data?.message?.sender_id !== me.id) {
-        const msg: Message = data?.data?.message
+      const event = data?.data?.event ?? data?.event
+      const payload = data?.data?.data ?? data?.data
+
+      if (event === 'message_read') {
+        // Flip all our sent ✓ ticks to ✓✓ in this thread
+        panel.querySelectorAll<HTMLElement>('.msg-tick').forEach(t => {
+          t.textContent = '✓✓'
+          t.classList.replace('text-purple-300/60', 'text-sky-300')
+        })
+        return
+      }
+
+      if (payload?.from_username === username || payload?.message?.sender_id !== me.id) {
+        const msg: Message = payload?.message
         if (msg) {
           threadEl.insertAdjacentHTML('beforeend', renderMsg(msg, me.id))
           threadEl.scrollTop = threadEl.scrollHeight
@@ -150,11 +162,17 @@ async function loadThread(root: HTMLElement, username: string) {
 
 function renderMsg(msg: Message, myID: number): string {
   const isMine = msg.sender_id === myID
+  const readTick = isMine
+    ? `<span class="msg-tick text-xs ml-1 ${msg.read ? 'text-sky-300' : 'text-purple-300/60'}">${msg.read ? '✓✓' : '✓'}</span>`
+    : ''
   return `
-  <div class="flex ${isMine ? 'justify-end' : 'justify-start'}">
+  <div class="flex ${isMine ? 'justify-end' : 'justify-start'}" data-msg-id="${msg.id}">
     <div class="${isMine ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-100'} rounded-2xl px-4 py-2 max-w-xs text-sm break-words">
       ${escapeHTML(msg.body)}
-      <div class="text-xs ${isMine ? 'text-purple-300' : 'text-gray-500'} mt-0.5 text-right">${timeAgo(msg.created_at)}</div>
+      <div class="flex items-center justify-end gap-1 mt-0.5">
+        <span class="text-xs ${isMine ? 'text-purple-300' : 'text-gray-500'}">${timeAgo(msg.created_at)}</span>
+        ${readTick}
+      </div>
     </div>
   </div>`
 }

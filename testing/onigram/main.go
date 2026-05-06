@@ -124,13 +124,15 @@ func main() {
 	// Controllers
 	authCtrl := &ctrl.AuthController{Guard: guard}
 	userCtrl := &ctrl.UserController{}
-	postCtrl := &ctrl.PostController{}
+	postCtrl := &ctrl.PostController{NotifyFn: notifyFn}
 	likeCtrl := &ctrl.LikeController{NotifyFn: notifyFn}
 	commentCtrl := &ctrl.CommentController{NotifyFn: notifyFn}
 	notifCtrl := &ctrl.NotificationController{}
 	storyCtrl := &ctrl.StoryController{}
 	bookmarkCtrl := &ctrl.BookmarkController{}
 	msgCtrl := &ctrl.MessageController{NotifyFn: dmNotifyFn}
+	hashtagCtrl := &ctrl.HashtagController{}
+	highlightCtrl := &ctrl.HighlightController{}
 
 	oni.Use(
 		middleware.Logger(),
@@ -140,10 +142,7 @@ func main() {
 
 	oni.Route(func(r *routing.Router) {
 		// WebSocket endpoint
-		r.Get("/ws", func(c *onihttp.Context) error {
-			hub.ServeHTTP(c.Response, c.Request.Request)
-			return nil
-		})
+		r.Get("/ws", hub.Handler())
 
 		// Serve uploaded media (posts, avatars, stories)
 		r.Get("/storage/*", func(c *onihttp.Context) error {
@@ -185,6 +184,7 @@ func main() {
 		r.Group("/api/posts", func(g *routing.Group) {
 			g.Post("/", authMW(postCtrl.Store))
 			g.Get("/:id", optionalAuthMW(postCtrl.Show))
+			g.Put("/:id", authMW(postCtrl.Edit))
 			g.Delete("/:id", authMW(postCtrl.Destroy))
 			g.Post("/:id/like", authMW(likeCtrl.Store))
 			g.Delete("/:id/like", authMW(likeCtrl.Destroy))
@@ -199,6 +199,8 @@ func main() {
 			g.Delete("/:id", authMW(commentCtrl.Delete))
 			g.Post("/:id/like", authMW(commentCtrl.LikeComment))
 			g.Delete("/:id/like", authMW(commentCtrl.UnlikeComment))
+			g.Post("/:id/pin", authMW(commentCtrl.Pin))
+			g.Delete("/:id/pin", authMW(commentCtrl.Unpin))
 		})
 
 		// Stories
@@ -214,6 +216,19 @@ func main() {
 			g.Get("/", authMW(msgCtrl.Inbox))
 			g.Get("/:username", authMW(msgCtrl.Thread))
 			g.Post("/:username", authMW(msgCtrl.Send))
+		})
+
+		// Hashtags
+		r.Get("/api/hashtags/trending", hashtagCtrl.Trending)
+		r.Get("/api/hashtags/:tag", optionalAuthMW(hashtagCtrl.Feed))
+
+		// Highlights
+		r.Get("/api/highlights/:username", highlightCtrl.Index)
+		r.Group("/api/highlights", func(g *routing.Group) {
+			g.Post("/", authMW(highlightCtrl.Store))
+			g.Delete("/:id", authMW(highlightCtrl.Destroy))
+			g.Post("/:id/stories", authMW(highlightCtrl.AddStory))
+			g.Delete("/:id/stories/:storyId", authMW(highlightCtrl.RemoveStory))
 		})
 
 		// Bookmarks

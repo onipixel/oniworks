@@ -8,7 +8,24 @@ export interface User {
   created_at: string
   follower_count?: number
   following_count?: number
+  post_count?: number
   is_following?: boolean
+}
+
+export interface Highlight {
+  id: number
+  user_id: number
+  title: string
+  cover_image_path: string
+  created_at: string
+  stories?: Story[]
+}
+
+export interface PostImage {
+  id: number
+  post_id: number
+  image_path: string
+  position: number
 }
 
 export interface Post {
@@ -19,19 +36,24 @@ export interface Post {
   created_at: string
   user?: User
   like_count?: number
+  comment_count?: number
   is_liked?: boolean
   is_bookmarked?: boolean
+  images?: PostImage[]
 }
 
 export interface Comment {
   id: number
   user_id: number
   post_id: number
+  parent_comment_id?: number
   body: string
+  is_pinned?: boolean
   created_at: string
   user?: User
   like_count?: number
   is_liked?: boolean
+  replies?: Comment[]
 }
 
 export interface Story {
@@ -80,6 +102,11 @@ export interface Message {
   read: boolean
   created_at: string
   sender?: User
+}
+
+export interface Hashtag {
+  tag: string
+  post_count: number
 }
 
 export interface AuthResponse {

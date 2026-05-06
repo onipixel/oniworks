@@ -19,18 +19,12 @@ type AuthController struct {
 // POST /api/auth/register
 func (ctrl *AuthController) Register(c *onihttp.Context) error {
 	var req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Username string `json:"username" validate:"required,min=3,max=30,alphanum"`
+		Email    string `json:"email"    validate:"required,email"`
+		Password string `json:"password" validate:"required,min=8"`
 	}
-	if err := c.Bind(&req); err != nil {
-		return c.Abort(400, "invalid request body")
-	}
-	if req.Username == "" || req.Email == "" || req.Password == "" {
-		return c.Abort(422, "username, email, and password are required")
-	}
-	if len(req.Password) < 8 {
-		return c.Abort(422, "password must be at least 8 characters")
+	if err := c.Validate(&req); err != nil {
+		return err
 	}
 
 	// Check duplicate username / email
@@ -75,11 +69,11 @@ func (ctrl *AuthController) Register(c *onihttp.Context) error {
 // POST /api/auth/login
 func (ctrl *AuthController) Login(c *onihttp.Context) error {
 	var req struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email    string `json:"email"    validate:"required,email"`
+		Password string `json:"password" validate:"required"`
 	}
-	if err := c.Bind(&req); err != nil {
-		return c.Abort(400, "invalid request body")
+	if err := c.Validate(&req); err != nil {
+		return err
 	}
 
 	var user models.User

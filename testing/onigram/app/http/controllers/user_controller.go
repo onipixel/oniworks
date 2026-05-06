@@ -30,11 +30,13 @@ func (ctrl *UserController) Show(c *onihttp.Context) error {
 		return err
 	}
 
-	// Follower / following counts
+	// Follower / following / post counts
 	followerCount, _ := database.Table("follows").Where("following_id = ?", user.ID).Count()
 	followingCount, _ := database.Table("follows").Where("follower_id = ?", user.ID).Count()
+	postCount, _ := database.Table("posts").Where("user_id = ?", user.ID).Count()
 	user.FollowerCount = int(followerCount)
 	user.FollowingCount = int(followingCount)
+	user.PostCount = int(postCount)
 
 	// Is the viewer following this user?
 	if vid != 0 && vid != user.ID {

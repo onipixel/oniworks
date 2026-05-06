@@ -1,0 +1,28 @@
+# Binaries
+*.exe
+*.exe~
+seed.exe
+onigram
+
+# Dev logs
+*.log
+server_final.txt
+server_final_err.txt
+
+# Compiled frontend
+public/build/
+
+# Node
+node_modules/
+
+# Local env
+.env.local
+.env.production
+
+# Storage (uploaded media)
+storage/posts/
+storage/avatars/
+storage/stories/
+
+# Oni Memory snapshot
+storage/memory.snap

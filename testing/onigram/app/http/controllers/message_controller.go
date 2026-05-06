@@ -106,10 +106,22 @@ func (ctrl *MessageController) Thread(c *onihttp.Context) error {
 		return err
 	}
 
-	// Mark all received messages as read
-	_ = database.Table("messages").
+	// Mark all received messages as read and notify sender in real time
+	unreadCount, _ := database.Table("messages").
 		Where("conversation_id = ? AND sender_id = ? AND read = ?", conv.ID, other.ID, false).
-		Update(database.Map{"read": true})
+		Count()
+	if unreadCount > 0 {
+		_ = database.Table("messages").
+			Where("conversation_id = ? AND sender_id = ? AND read = ?", conv.ID, other.ID, false).
+			Update(database.Map{"read": true})
+		// Push read-receipt to sender's DM channel
+		if ctrl.NotifyFn != nil {
+			ctrl.NotifyFn(other.ID, "message_read", map[string]any{
+				"conversation_id": conv.ID,
+				"read_by":         userID,
+			})
+		}
+	}
 
 	msgs := make([]models.Message, 0)
 	if err := database.Table("messages").

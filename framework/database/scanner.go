@@ -224,32 +224,45 @@ func scanRowToStruct(rows *sql.Rows, cols []string, dest any) error {
 			continue
 		}
 		f := rv.FieldByIndex(idx)
-		// If the field is a pointer, scan directly (nil = NULL is fine)
 		if f.Kind() == reflect.Ptr {
-			if f.IsNil() {
-				f.Set(reflect.New(f.Type().Elem()))
-			}
-			ptrs[i] = f.Interface()
+			// Use a scanner that handles NULL → nil and non-NULL → allocated value
+			ptrs[i] = &nullablePtrScanner{field: f}
 		} else {
-			// Wrap in a nullable scanner so NULL doesn't panic
+			// Wrap in a nullable scanner so NULL doesn't panic on value types
 			ptrs[i] = &nullableScanner{field: f}
 		}
 	}
 	return rows.Scan(ptrs...)
 }
 
-// nullableScanner accepts a SQL value (including NULL) and sets the target field.
+// nullableScanner accepts a SQL value (including NULL) and sets a value-type field.
+// NULL leaves the field at its zero value.
 type nullableScanner struct {
 	field reflect.Value
 }
 
 func (ns *nullableScanner) Scan(src any) error {
 	if src == nil {
-		// Leave the field at its zero value
 		return nil
 	}
-	// Try direct assignment via convertAssign
 	dest := ns.field.Addr().Interface()
+	return convertAssign(dest, src)
+}
+
+// nullablePtrScanner handles pointer fields (*T). NULL → nil; non-NULL → *T with value.
+type nullablePtrScanner struct {
+	field reflect.Value
+}
+
+func (ns *nullablePtrScanner) Scan(src any) error {
+	if src == nil {
+		ns.field.Set(reflect.Zero(ns.field.Type()))
+		return nil
+	}
+	if ns.field.IsNil() {
+		ns.field.Set(reflect.New(ns.field.Type().Elem()))
+	}
+	dest := ns.field.Interface()
 	return convertAssign(dest, src)
 }
 

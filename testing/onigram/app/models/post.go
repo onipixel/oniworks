@@ -12,10 +12,12 @@ type Post struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 
 	// Loaded / computed
-	User         *User `db:"-" json:"user,omitempty"`
-	LikeCount    int   `db:"-" json:"like_count,omitempty"`
-	IsLiked      bool  `db:"-" json:"is_liked,omitempty"`
-	IsBookmarked bool  `db:"-" json:"is_bookmarked,omitempty"`
+	User         *User       `db:"-" json:"user,omitempty"`
+	LikeCount    int         `db:"-" json:"like_count,omitempty"`
+	CommentCount int         `db:"-" json:"comment_count,omitempty"`
+	IsLiked      bool        `db:"-" json:"is_liked,omitempty"`
+	IsBookmarked bool        `db:"-" json:"is_bookmarked,omitempty"`
+	Images       []PostImage `db:"-" json:"images,omitempty"`
 }
 
 func (Post) TableName() string { return "posts" }

@@ -1,4 +1,4 @@
-import type { User, Post, Comment, Story, Notification, Conversation, Message } from './types.ts'
+import type { User, Post, Comment, Story, Notification, Conversation, Message, Hashtag, Highlight } from './types.ts'
 
 const BASE = '/api'
 
@@ -47,13 +47,15 @@ export const posts = {
   explore: (page = 1) => request<{ posts: Post[]; page: number }>('GET', `/explore?page=${page}`),
   get: (id: number) => request<Post>('GET', `/posts/${id}`),
   create: (form: FormData) => request<Post>('POST', '/posts', undefined, form),
+  edit: (id: number, caption: string) => request<Post>('PUT', `/posts/${id}`, { caption }),
   delete: (id: number) => request<void>('DELETE', `/posts/${id}`),
   like: (id: number) => request<{ like_count: number }>('POST', `/posts/${id}/like`),
   unlike: (id: number) => request<{ like_count: number }>('DELETE', `/posts/${id}/like`),
   bookmark: (id: number) => request<{ bookmarked: boolean }>('POST', `/posts/${id}/bookmark`),
   unbookmark: (id: number) => request<{ bookmarked: boolean }>('DELETE', `/posts/${id}/bookmark`),
   comments: (id: number) => request<{ comments: Comment[] }>('GET', `/posts/${id}/comments`),
-  addComment: (id: number, body: string) => request<Comment>('POST', `/posts/${id}/comments`, { body }),
+  addComment: (id: number, body: string, parentCommentId?: number) =>
+    request<Comment>('POST', `/posts/${id}/comments`, { body, parent_comment_id: parentCommentId ?? null }),
 }
 
 // Users
@@ -76,6 +78,8 @@ export const comments = {
   delete: (id: number) => request<void>('DELETE', `/comments/${id}`),
   like: (id: number) => request<{ like_count: number }>('POST', `/comments/${id}/like`),
   unlike: (id: number) => request<{ like_count: number }>('DELETE', `/comments/${id}/like`),
+  pin: (id: number) => request<void>('POST', `/comments/${id}/pin`),
+  unpin: (id: number) => request<void>('DELETE', `/comments/${id}/pin`),
 }
 
 // Stories
@@ -104,4 +108,23 @@ export const notifications = {
   list: () => request<{ notifications: Notification[]; unread_count: number }>('GET', '/notifications'),
   markRead: (id: number) => request<void>('POST', `/notifications/${id}/read`),
   markAllRead: () => request<void>('POST', '/notifications/read-all'),
+}
+
+// Highlights
+export const highlights = {
+  list: (username: string) => request<{ highlights: Highlight[] }>('GET', `/highlights/${encodeURIComponent(username)}`),
+  create: (title: string, storyId?: number) =>
+    request<Highlight>('POST', '/highlights', { title, story_id: storyId ?? 0 }),
+  delete: (id: number) => request<void>('DELETE', `/highlights/${id}`),
+  addStory: (id: number, storyId: number) =>
+    request<void>('POST', `/highlights/${id}/stories`, { story_id: storyId }),
+  removeStory: (id: number, storyId: number) =>
+    request<void>('DELETE', `/highlights/${id}/stories/${storyId}`),
+}
+
+// Hashtags
+export const hashtags = {
+  trending: () => request<{ hashtags: Hashtag[] }>('GET', '/hashtags/trending'),
+  feed: (tag: string, page = 1) =>
+    request<{ posts: Post[]; tag: string; page: number }>('GET', `/hashtags/${encodeURIComponent(tag)}?page=${page}`),
 }

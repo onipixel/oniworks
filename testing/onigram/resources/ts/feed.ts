@@ -1,4 +1,4 @@
-import { posts as postsAPI, users as usersAPI } from './api.ts'
+import { posts as postsAPI, users as usersAPI, hashtags as hashtagsAPI } from './api.ts'
 import { navigate } from './router.ts'
 import type { Post } from './types.ts'
 import { renderStoryBar } from './stories.ts'
@@ -43,15 +43,10 @@ export function renderFeed(root: HTMLElement) {
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
         <h3 class="text-sm font-semibold text-gray-300">Trending</h3>
-        <div class="space-y-2">
-          ${trendingTags().map(t => `
-          <a href="/explore?tag=${t.tag}" data-link class="flex items-center justify-between group">
-            <div>
-              <div class="text-sm font-medium text-sky-400 group-hover:text-sky-300 transition">#${t.tag}</div>
-              <div class="text-xs text-gray-500">${t.posts} posts</div>
-            </div>
-            <svg class="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-          </a>`).join('')}
+        <div id="trending-tags" class="space-y-2">
+          <div class="h-4 bg-gray-800 rounded animate-pulse"></div>
+          <div class="h-4 bg-gray-800 rounded animate-pulse"></div>
+          <div class="h-4 bg-gray-800 rounded animate-pulse"></div>
         </div>
       </div>
     </aside>
@@ -61,6 +56,7 @@ export function renderFeed(root: HTMLElement) {
   renderStoryBar(root.querySelector('#story-bar')!)
   loadFeed(1)
   loadSuggestions(root)
+  loadTrending(root)
   wireSearch(root)
 
   root.querySelector('#load-more-btn')?.addEventListener('click', () => {
@@ -80,11 +76,38 @@ export function renderFeed(root: HTMLElement) {
       }
       feedPosts = [...feedPosts, ...posts]
       posts.forEach(post => container.insertAdjacentHTML('beforeend', renderPostCard(post)))
-      root.querySelector('#load-more-wrap')!.classList.toggle('hidden', posts.length < 20)
+
+      // When feed runs dry, surface suggested posts from explore
+      if (posts.length < 20) {
+        root.querySelector('#load-more-wrap')!.classList.add('hidden')
+        if (p === 1 || posts.length === 0) {
+          loadSuggestedPosts(container, feedPosts)
+        }
+      } else {
+        root.querySelector('#load-more-wrap')!.classList.remove('hidden')
+      }
       wirePostActions(root, feedPosts)
     } catch {
       if (p === 1) container.innerHTML = errorState('Failed to load feed')
     }
+  }
+
+  async function loadSuggestedPosts(container: HTMLDivElement, existing: Post[]) {
+    try {
+      const { posts: suggested } = await postsAPI.explore(1)
+      const existingIDs = new Set(existing.map(p => p.id))
+      const fresh = suggested.filter(p => !existingIDs.has(p.id))
+      if (!fresh.length) return
+      container.insertAdjacentHTML('beforeend', `
+        <div class="flex items-center gap-3 py-4">
+          <div class="flex-1 h-px bg-gray-800"></div>
+          <span class="text-xs text-gray-500 font-medium">Suggested for you</span>
+          <div class="flex-1 h-px bg-gray-800"></div>
+        </div>`)
+      fresh.slice(0, 6).forEach(post => container.insertAdjacentHTML('beforeend', renderPostCard(post)))
+      feedPosts = [...feedPosts, ...fresh]
+      wirePostActions(root, feedPosts)
+    } catch { /* non-critical */ }
   }
 }
 
@@ -115,15 +138,27 @@ async function loadSuggestions(root: HTMLElement) {
   } catch { /* non-critical */ }
 }
 
-function trendingTags() {
-  return [
-    { tag: 'photography', posts: '2.4M' },
-    { tag: 'travel', posts: '8.1M' },
-    { tag: 'food', posts: '5.3M' },
-    { tag: 'fitness', posts: '3.7M' },
-    { tag: 'art', posts: '4.2M' },
-    { tag: 'nature', posts: '6.9M' },
-  ]
+async function loadTrending(root: HTMLElement) {
+  const el = root.querySelector<HTMLElement>('#trending-tags')
+  if (!el) return
+  try {
+    const { hashtags } = await hashtagsAPI.trending()
+    if (!hashtags.length) {
+      el.innerHTML = `<p class="text-xs text-gray-500">No trending tags yet</p>`
+      return
+    }
+    el.innerHTML = hashtags.slice(0, 6).map(h => `
+      <button class="w-full flex items-center justify-between group trending-tag-btn" data-tag="${escapeHTML(h.tag)}">
+        <div class="text-left">
+          <div class="text-sm font-medium text-sky-400 group-hover:text-sky-300 transition">#${escapeHTML(h.tag)}</div>
+          <div class="text-xs text-gray-500">${h.post_count} post${h.post_count === 1 ? '' : 's'}</div>
+        </div>
+        <svg class="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      </button>`).join('')
+    el.querySelectorAll<HTMLButtonElement>('.trending-tag-btn').forEach(btn => {
+      btn.addEventListener('click', () => navigate('/explore?tag=' + encodeURIComponent(btn.dataset.tag!)))
+    })
+  } catch { /* non-critical */ }
 }
 
 function wireSearch(root: HTMLElement) {
@@ -184,6 +219,29 @@ export function renderPostCard(post: Post): string {
     ? `<svg class="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M5 4a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 20V4z"/></svg>`
     : `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>`
 
+  // Build image column: carousel if multiple images, single if one
+  const allImages = post.images && post.images.length > 1
+    ? post.images.map(i => i.image_path)
+    : [post.image_path]
+  const isCarousel = allImages.length > 1
+
+  const imageSection = isCarousel
+    ? `<div class="relative post-img-wrap" data-post-id="${post.id}">
+        <div class="carousel-track overflow-hidden">
+          <div class="carousel-slides flex transition-transform duration-300" style="width:${allImages.length * 100}%">
+            ${allImages.map(src => `<div style="width:${100 / allImages.length}%"><img src="${src}" alt="post" class="w-full object-cover max-h-[600px]" loading="lazy" /></div>`).join('')}
+          </div>
+        </div>
+        <button class="carousel-prev absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 rounded-full w-8 h-8 flex items-center justify-center text-white transition z-10">‹</button>
+        <button class="carousel-next absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 rounded-full w-8 h-8 flex items-center justify-center text-white transition z-10">›</button>
+        <div class="carousel-dots absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+          ${allImages.map((_, i) => `<span class="carousel-dot w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-white' : 'bg-white/40'}" data-idx="${i}"></span>`).join('')}
+        </div>
+      </div>`
+    : `<div class="relative group cursor-pointer post-img-wrap" data-post-id="${post.id}">
+        <img src="${post.image_path}" alt="post" class="w-full object-cover max-h-[600px]" loading="lazy" />
+      </div>`
+
   return `
   <article class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden" data-post-id="${post.id}">
     <div class="flex items-center gap-3 p-3 px-4">
@@ -191,11 +249,10 @@ export function renderPostCard(post: Post): string {
       <div class="flex-1 min-w-0">
         <a href="/profile/${post.user?.username ?? ''}" data-link class="font-semibold text-sm hover:underline">${post.user?.username ?? 'unknown'}</a>
       </div>
+      ${isCarousel ? `<span class="text-xs text-gray-500 flex-shrink-0">1/${allImages.length}</span>` : ''}
       <span class="text-xs text-gray-500 flex-shrink-0">${timeAgo(post.created_at)}</span>
     </div>
-    <div class="relative group cursor-pointer post-img-wrap" data-post-id="${post.id}">
-      <img src="${post.image_path}" alt="post" class="w-full object-cover max-h-[600px]" loading="lazy" />
-    </div>
+    ${imageSection}
     <div class="p-4 space-y-2">
       <div class="flex items-center gap-3">
         <button class="like-btn flex items-center gap-1.5 text-sm ${post.is_liked ? 'text-pink-500' : 'text-gray-300 hover:text-pink-400'} transition" data-post-id="${post.id}" data-liked="${post.is_liked ?? false}">
@@ -204,18 +261,51 @@ export function renderPostCard(post: Post): string {
         </button>
         <button class="comment-btn flex items-center gap-1.5 text-sm text-gray-300 hover:text-white transition" data-post-id="${post.id}">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          ${post.comment_count ? `<span class="text-sm font-medium">${post.comment_count}</span>` : ''}
         </button>
         <button class="bookmark-btn ml-auto text-sm ${post.is_bookmarked ? 'text-white' : 'text-gray-300 hover:text-white'} transition" data-post-id="${post.id}" data-bookmarked="${post.is_bookmarked ?? false}">
           ${bookmarkIcon}
         </button>
       </div>
-      ${post.caption ? `<p class="text-sm leading-relaxed"><a href="/profile/${post.user?.username ?? ''}" data-link class="font-semibold hover:underline">${post.user?.username ?? ''}</a> ${escapeHTML(post.caption)}</p>` : ''}
+      ${post.caption ? `<p class="text-sm leading-relaxed"><a href="/profile/${post.user?.username ?? ''}" data-link class="font-semibold hover:underline">${post.user?.username ?? ''}</a> ${mentionify(post.caption)}</p>` : ''}
     </div>
   </article>`
 }
 
 export function wirePostActions(root: HTMLElement, posts: Post[] = []) {
   const postMap = new Map(posts.map(p => [p.id, p]))
+
+  // Carousel controls
+  root.querySelectorAll<HTMLElement>('.carousel-track').forEach(track => {
+    if (track.dataset.bound) return
+    track.dataset.bound = '1'
+    const article = track.closest('article')!
+    const slides = track.querySelector<HTMLElement>('.carousel-slides')!
+    const dots = article.querySelectorAll<HTMLElement>('.carousel-dot')
+    let current = 0
+    const total = dots.length
+
+    const goTo = (idx: number) => {
+      current = Math.max(0, Math.min(idx, total - 1))
+      slides.style.transform = `translateX(-${current * (100 / total)}%)`
+      dots.forEach((d, i) => {
+        d.classList.toggle('bg-white', i === current)
+        d.classList.toggle('bg-white/40', i !== current)
+      })
+      // Update counter in header
+      const counter = article.querySelector<HTMLElement>('.text-xs.text-gray-500')
+      if (counter && counter.textContent?.includes('/')) counter.textContent = `${current + 1}/${total}`
+    }
+
+    article.querySelector('.carousel-prev')?.addEventListener('click', (e) => {
+      e.stopPropagation()
+      goTo(current - 1)
+    })
+    article.querySelector('.carousel-next')?.addEventListener('click', (e) => {
+      e.stopPropagation()
+      goTo(current + 1)
+    })
+  })
 
   // Image click → lightbox modal; double-tap → like
   root.querySelectorAll<HTMLElement>('.post-img-wrap').forEach(el => {
@@ -351,6 +441,6 @@ export function escapeHTML(s: string): string {
 
 export function mentionify(text: string): string {
   return escapeHTML(text)
-    .replace(/@(\w+)/g, '<a href="/profile/$1" data-link class="text-purple-400 font-medium hover:underline">@$1</a>')
-    .replace(/#(\w+)/g, '<a href="/explore?tag=$1" data-link class="text-sky-400 font-medium hover:underline">#$1</a>')
+    .replace(/@(\w+)/g, '<span data-mention="$1" class="text-purple-400 font-medium hover:underline cursor-pointer">@$1</span>')
+    .replace(/#(\w+)/g, '<span data-hashtag="$1" class="text-sky-400 font-medium hover:underline cursor-pointer">#$1</span>')
 }

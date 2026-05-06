@@ -1,4 +1,4 @@
-import { stories as storiesAPI } from './api.ts'
+import { stories as storiesAPI, highlights as highlightsAPI } from './api.ts'
 import { getUser } from './auth.ts'
 import type { Story, StoryGroup } from './types.ts'
 
@@ -98,6 +98,8 @@ function openStoryViewer(allStories: Story[], startID?: number) {
       </div>
       <!-- close -->
       <button id="story-close" class="absolute top-4 right-4 text-white text-2xl z-20">✕</button>
+      <!-- save to highlight (own stories only) -->
+      <button id="story-highlight-btn" class="hidden absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/10 hover:bg-white/20 backdrop-blur text-white text-xs font-semibold px-4 py-2 rounded-full z-20 transition">♡ Add to Highlight</button>
     </div>`
 
   document.body.appendChild(overlay)
@@ -132,6 +134,16 @@ function openStoryViewer(allStories: Story[], startID?: number) {
 
     // Mark viewed
     storiesAPI.markViewed(story.id).catch(() => {})
+
+    // Show "Add to Highlight" for own stories
+    const hlBtn = overlay.querySelector<HTMLButtonElement>('#story-highlight-btn')!
+    const me = getUser()
+    if (me && story.user_id === me.id) {
+      hlBtn.classList.remove('hidden')
+      hlBtn.onclick = () => openAddToHighlightModal(story.id)
+    } else {
+      hlBtn.classList.add('hidden')
+    }
 
     clearTimeout(timer)
     timer = setTimeout(() => show(i + 1), 5000)
@@ -199,6 +211,71 @@ function openStoryCreator() {
       errEl.classList.remove('hidden')
       btn.disabled = false
       btn.textContent = 'Share'
+    }
+  })
+}
+
+// ─── Add to Highlight ─────────────────────────────────────────────
+
+async function openAddToHighlightModal(storyId: number) {
+  const me = getUser()
+  if (!me) return
+
+  const overlay = document.createElement('div')
+  overlay.className = 'fixed inset-0 bg-black/70 z-[60] flex items-end md:items-center justify-center p-4'
+  overlay.innerHTML = `
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm max-h-[70vh] flex flex-col">
+      <div class="flex items-center justify-between p-4 border-b border-gray-800">
+        <h3 class="font-semibold">Save to Highlight</h3>
+        <button id="ath-close" class="text-gray-400 hover:text-white">✕</button>
+      </div>
+      <div id="ath-list" class="overflow-y-auto flex-1 p-3 space-y-2">
+        <div class="text-center text-gray-500 py-4 text-sm">Loading highlights...</div>
+      </div>
+      <div class="p-3 border-t border-gray-800">
+        <button id="ath-new" class="w-full flex items-center gap-3 px-4 py-2.5 border border-dashed border-gray-700 rounded-xl hover:border-purple-500 hover:text-purple-400 transition text-sm text-gray-400">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          New Highlight
+        </button>
+      </div>
+    </div>`
+  document.body.appendChild(overlay)
+
+  const close = () => overlay.remove()
+  overlay.querySelector('#ath-close')!.addEventListener('click', close)
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
+
+  // Load existing highlights
+  try {
+    const { highlights } = await highlightsAPI.list(me.username)
+    const list = overlay.querySelector('#ath-list')!
+    if (highlights.length === 0) {
+      list.innerHTML = `<p class="text-center text-gray-500 text-sm py-4">No highlights yet. Create one below.</p>`
+    } else {
+      list.innerHTML = highlights.map(hl => `
+        <button class="ath-pick w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-800 transition text-left" data-id="${hl.id}">
+          <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#374151;">
+            ${hl.cover_image_path ? `<img src="${hl.cover_image_path}" style="width:44px;height:44px;object-fit:cover;" />` : ''}
+          </div>
+          <span class="text-sm font-medium">${hl.title}</span>
+        </button>`).join('')
+      list.querySelectorAll<HTMLButtonElement>('.ath-pick').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await highlightsAPI.addStory(parseInt(btn.dataset.id!), storyId)
+          close()
+        })
+      })
+    }
+  } catch { /* ignore */ }
+
+  overlay.querySelector('#ath-new')!.addEventListener('click', async () => {
+    const title = prompt('Highlight name:')?.trim()
+    if (!title) return
+    try {
+      await highlightsAPI.create(title, storyId)
+      close()
+    } catch (e: any) {
+      alert(e?.message ?? 'Failed to create highlight')
     }
   })
 }
