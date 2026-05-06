@@ -23,8 +23,7 @@ type Builder struct {
 	table string
 
 	// WHERE
-	wheres    []whereClause
-	orWheres  []whereClause
+	wheres []whereClause
 
 	// SELECT
 	selects []string
@@ -38,8 +37,8 @@ type Builder struct {
 	joins []string
 
 	// GROUP / HAVING
-	groupBys []string
-	having   string
+	groupBys   []string
+	having     string
 	havingArgs []any
 
 	// WITH (eager load at query time)
@@ -51,6 +50,7 @@ type Builder struct {
 
 	// Soft delete support
 	withTrashed bool
+	softDelete  bool
 }
 
 type whereClause struct {
@@ -65,7 +65,6 @@ func (b *Builder) reset() {
 	b.ctx = nil
 	b.table = ""
 	b.wheres = b.wheres[:0]
-	b.orWheres = b.orWheres[:0]
 	b.selects = b.selects[:0]
 	b.orderBys = b.orderBys[:0]
 	b.limit = 0
@@ -78,6 +77,7 @@ func (b *Builder) reset() {
 	b.rawSQL = ""
 	b.rawArgs = nil
 	b.withTrashed = false
+	b.softDelete = false
 }
 
 // release returns the builder to the pool. Call defer b.release() in terminal methods.
@@ -141,6 +141,14 @@ func (b *Builder) WhereNotNull(col string) *Builder {
 	return b.Where(b.db.grammar.QuoteIdent(col) + " IS NOT NULL")
 }
 
+// WhereRaw adds a raw WHERE clause without any quoting or escaping.
+// Use this for complex conditions or when you need full control over the SQL.
+//
+//	db.Table("users").WhereRaw("1=1").Delete() // delete all rows
+func (b *Builder) WhereRaw(clause string, args ...any) *Builder {
+	return b.Where(clause, args...)
+}
+
 // OrderBy adds an ORDER BY clause.
 //
 //	db.Table("users").OrderBy("created_at DESC").OrderBy("name ASC")
@@ -182,6 +190,10 @@ func (b *Builder) With(relations ...string) *Builder {
 // WithTrashed includes soft-deleted rows (does not add "deleted_at IS NULL").
 func (b *Builder) WithTrashed() *Builder { b.withTrashed = true; return b }
 
+// SoftDelete tells the builder this table uses soft deletes (deleted_at column).
+// Automatically adds "deleted_at IS NULL" to WHERE unless WithTrashed() is called.
+func (b *Builder) SoftDelete() *Builder { b.softDelete = true; return b }
+
 // ─────────────────────────── Terminal methods ──────────────────────
 
 // First executes the query and scans a single row into dest.
@@ -195,14 +207,16 @@ func (b *Builder) First(dest any) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
+			_ = rows.Close()
 			return err
 		}
+		_ = rows.Close()
 		return ErrNotFound
 	}
 	if err := scanRow(rows, dest); err != nil {
+		_ = rows.Close()
 		return err
 	}
 	callHook(dest, hookAfterFind, b.db)
@@ -221,8 +235,8 @@ func (b *Builder) All(dest any) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 	if err := scanRows(rows, dest); err != nil {
+		_ = rows.Close()
 		return err
 	}
 	callSliceHook(dest, hookAfterFind, b.db)
@@ -254,6 +268,78 @@ func (b *Builder) Count() (int64, error) {
 func (b *Builder) Exists() (bool, error) {
 	count, err := b.Count()
 	return count > 0, err
+}
+
+// Page holds paginated query results.
+type Page[T any] struct {
+	Items       []T   `json:"items"`
+	Total       int64 `json:"total"`
+	PerPage     int   `json:"per_page"`
+	CurrentPage int   `json:"current_page"`
+	LastPage    int   `json:"last_page"`
+	From        int64 `json:"from"`
+	To          int64 `json:"to"`
+}
+
+// Paginate executes a COUNT and a SELECT with LIMIT/OFFSET and returns a Page.
+// page is 1-based.
+func (b *Builder) Paginate(page, perPage int, dest any) (*Page[any], error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 15
+	}
+
+	// Clone builder state for count query
+	countB := builderPool.Get().(*Builder)
+	countB.reset()
+	countB.db = b.db
+	countB.ctx = b.ctx
+	countB.table = b.table
+	countB.wheres = append(countB.wheres, b.wheres...)
+	countB.joins = append(countB.joins, b.joins...)
+	countB.withTrashed = b.withTrashed
+
+	total, err := countB.Count()
+	if err != nil {
+		b.release()
+		return nil, err
+	}
+
+	b.limit = perPage
+	b.offset = (page - 1) * perPage
+
+	if err := b.All(dest); err != nil {
+		return nil, err
+	}
+
+	lastPage := int(total) / perPage
+	if int(total)%perPage != 0 {
+		lastPage++
+	}
+	if lastPage < 1 {
+		lastPage = 1
+	}
+
+	from := int64((page-1)*perPage + 1)
+	to := int64(page * perPage)
+	if to > total {
+		to = total
+	}
+	if total == 0 {
+		from = 0
+		to = 0
+	}
+
+	return &Page[any]{
+		Total:       total,
+		PerPage:     perPage,
+		CurrentPage: page,
+		LastPage:    lastPage,
+		From:        from,
+		To:          to,
+	}, nil
 }
 
 // Pluck retrieves a single column as a []T slice.
@@ -343,6 +429,9 @@ func (b *Builder) Save(dest any) error {
 //	db.Table("users").Where("id = ?", 1).Update(database.Map{"name": "Alice"})
 func (b *Builder) Update(data Map) error {
 	defer b.release()
+	if len(b.wheres) == 0 && b.rawSQL == "" {
+		return fmt.Errorf("database: Update called without WHERE clause — use WhereRaw(\"1=1\") to update all rows")
+	}
 	cols := make([]string, 0, len(data))
 	vals := make([]any, 0, len(data))
 	for k, v := range data {
@@ -360,6 +449,9 @@ func (b *Builder) Update(data Map) error {
 //	db.Table("users").Where("id = ?", id).Delete()
 func (b *Builder) Delete() error {
 	defer b.release()
+	if len(b.wheres) == 0 && b.rawSQL == "" {
+		return fmt.Errorf("database: Delete called without WHERE clause — use WhereRaw(\"1=1\") to delete all rows")
+	}
 	query, args := b.buildDelete()
 	query, args = b.normalizePlaceholders(query, args...)
 	_, err := b.db.execContext(b.ctx, query, args...)
@@ -431,9 +523,19 @@ func (b *Builder) buildSelect() (string, []any) {
 
 	// WHERE
 	where, wArgs := b.buildWhere()
-	if where != "" {
+	sdClause := ""
+	if b.softDelete && !b.withTrashed {
+		sdClause = b.db.grammar.QuoteIdent("deleted_at") + " IS NULL"
+	}
+	if where != "" || sdClause != "" {
 		sb.WriteString(" WHERE ")
-		sb.WriteString(where)
+		if sdClause != "" && where != "" {
+			sb.WriteString(sdClause + " AND (" + where + ")")
+		} else if sdClause != "" {
+			sb.WriteString(sdClause)
+		} else {
+			sb.WriteString(where)
+		}
 		args = append(args, wArgs...)
 	}
 

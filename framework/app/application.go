@@ -3,8 +3,10 @@ package app
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/onipixel/oniworks/framework/config"
 	fwerrors "github.com/onipixel/oniworks/framework/errors"
@@ -130,9 +132,17 @@ func (a *Application) Serve() error {
 func (a *Application) ServeAddr(addr string) error {
 	a.Boot()
 	cfg := onihttp.DefaultServerConfig()
-	cfg.Host = ""
-	cfg.Port = 0
-
+	// Parse host:port from addr
+	host, portStr, err := net.SplitHostPort(addr)
+	if err == nil {
+		port := 8080
+		if p, err := strconv.Atoi(portStr); err == nil {
+			port = p
+		}
+		cfg.Host = host
+		cfg.Port = port
+	}
+	a.Router.OnError(fwerrors.Handler(a.IsDebug()))
 	a.kernel = onihttp.NewKernel(cfg, a.Router).WithLogger(a.Logger)
 	return a.kernel.Serve()
 }

@@ -31,9 +31,6 @@ type Guard struct {
 	provider  UserProvider
 	sessions  *session.Manager
 	jwtSecret []byte
-
-	// cachedUser avoids repeated DB lookups in a single request
-	cachedUser User
 }
 
 // NewGuard creates a Guard.
@@ -60,16 +57,12 @@ func (g *Guard) Attempt(ctx context.Context, email, password string, sess *sessi
 		return nil, ErrInvalidCredentials
 	}
 	sess.Set("_auth_user_id", user.GetID())
-	g.cachedUser = user
 	return user, nil
 }
 
 // UserFromSession retrieves the authenticated user from the session.
 // Returns nil (and no error) if the session has no authenticated user.
 func (g *Guard) UserFromSession(ctx context.Context, sess *session.Session) (User, error) {
-	if g.cachedUser != nil {
-		return g.cachedUser, nil
-	}
 	idVal, ok := sess.Get("_auth_user_id")
 	if !ok {
 		return nil, nil
@@ -85,12 +78,7 @@ func (g *Guard) UserFromSession(ctx context.Context, sess *session.Session) (Use
 	default:
 		return nil, nil
 	}
-	user, err := g.provider.FindByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	g.cachedUser = user
-	return user, nil
+	return g.provider.FindByID(ctx, id)
 }
 
 // Check reports whether the session has an authenticated user.
@@ -102,7 +90,6 @@ func (g *Guard) Check(ctx context.Context, sess *session.Session) bool {
 // Logout removes the user from the session.
 func (g *Guard) Logout(sess *session.Session) {
 	sess.Delete("_auth_user_id")
-	g.cachedUser = nil
 }
 
 // ─────────────────────────── JWT Auth ──────────────────────────────

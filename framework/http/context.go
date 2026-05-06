@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/onipixel/oniworks/framework/validation"
 )
 
 // HandlerFunc is an OniWorks HTTP handler. Handlers return an error to signal failure;
@@ -163,6 +165,34 @@ func (c *Context) Header(name string) string { return c.Request.Header.Get(name)
 
 // Bind decodes the request body (JSON, XML, or form) into dest.
 func (c *Context) Bind(dest any) error { return c.Request.Bind(dest) }
+
+// Validate binds the request body into dest and then validates it against
+// `validate` struct tags. On validation failure it returns a 422 HTTPError
+// whose JSON body contains the field-level error map.
+//
+//	var req struct {
+//	    Email    string `json:"email"    validate:"required,email"`
+//	    Password string `json:"password" validate:"required,min=8"`
+//	}
+//	if err := c.Validate(&req); err != nil {
+//	    return err // automatic 422 with {"errors":{"email":["..."]}}
+//	}
+func (c *Context) Validate(dest any) error {
+	if err := c.Request.Bind(dest); err != nil {
+		return NewHTTPError(http.StatusBadRequest, "invalid request body: "+err.Error())
+	}
+	if err := validation.Default().Validate(dest); err != nil {
+		if verr, ok := err.(validation.Errors); ok {
+			_ = c.JSON(http.StatusUnprocessableEntity, Map{
+				"message": "validation failed",
+				"errors":  verr,
+			})
+			return err
+		}
+		return NewHTTPError(http.StatusUnprocessableEntity, err.Error())
+	}
+	return nil
+}
 
 // FormValue returns a form field value.
 func (c *Context) FormValue(name string) string { return c.Request.FormValue(name) }

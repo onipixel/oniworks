@@ -250,7 +250,7 @@ func (h *Hub) Push(connID string, e *Event) bool {
 // pushToChannel delivers e to all local connections subscribed to channel.
 func (h *Hub) pushToChannel(channel string, e *Event) {
 	h.mu.RLock()
-	conns := make([]*Conn, 0)
+	conns := make([]*Conn, 0, len(h.conns))
 	for _, c := range h.conns {
 		if c.IsSubscribed(channel) {
 			conns = append(conns, c)

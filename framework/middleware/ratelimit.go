@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -49,7 +50,7 @@ func RateLimit(max int, window time.Duration, opts ...RateLimitConfig) onihttp.M
 		}
 	}
 
-	store := newSlidingWindowStore(max, window)
+	store := newSlidingWindowStore(context.Background(), max, window)
 
 	return func(next onihttp.HandlerFunc) onihttp.HandlerFunc {
 		return func(c *onihttp.Context) error {
@@ -80,13 +81,13 @@ type slidingWindowStore struct {
 	window  time.Duration
 }
 
-func newSlidingWindowStore(max int, window time.Duration) *slidingWindowStore {
+func newSlidingWindowStore(ctx context.Context, max int, window time.Duration) *slidingWindowStore {
 	s := &slidingWindowStore{
 		entries: make(map[string]*windowEntry),
 		max:     max,
 		window:  window,
 	}
-	go s.cleanup()
+	go s.cleanup(ctx)
 	return s
 }
 
@@ -150,26 +151,31 @@ func (s *slidingWindowStore) getOrCreate(key string) *windowEntry {
 	return e
 }
 
-func (s *slidingWindowStore) cleanup() {
+func (s *slidingWindowStore) cleanup(ctx context.Context) {
 	ticker := time.NewTicker(s.window)
 	defer ticker.Stop()
-	for range ticker.C {
-		cutoff := time.Now().Add(-s.window)
-		s.mu.Lock()
-		for key, entry := range s.entries {
-			entry.mu.Lock()
-			valid := entry.timestamps[:0]
-			for _, t := range entry.timestamps {
-				if t.After(cutoff) {
-					valid = append(valid, t)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cutoff := time.Now().Add(-s.window)
+			s.mu.Lock()
+			for key, entry := range s.entries {
+				entry.mu.Lock()
+				valid := entry.timestamps[:0]
+				for _, t := range entry.timestamps {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
 				}
+				entry.timestamps = valid
+				if len(entry.timestamps) == 0 {
+					delete(s.entries, key)
+				}
+				entry.mu.Unlock()
 			}
-			entry.timestamps = valid
-			if len(entry.timestamps) == 0 {
-				delete(s.entries, key)
-			}
-			entry.mu.Unlock()
+			s.mu.Unlock()
 		}
-		s.mu.Unlock()
 	}
 }

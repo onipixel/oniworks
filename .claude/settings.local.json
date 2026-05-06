@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\otakumarc\\\\Documents\\\\GitHub\\\\oniworks\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\otakumarc\\\\Documents\\\\GitHub\\\\oniworks\" -Recurse -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(go build *)",
+      "Bash(Get-ChildItem *)",
+      "Bash(psql -U postgres -c \"SELECT version\\(\\);\")",
+      "PowerShell(Get-Command *)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -c \"SELECT 1;\" 2>&1)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -c \"DROP DATABASE IF EXISTS onimail; CREATE DATABASE onimail;\" 2>&1)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -c \"CREATE DATABASE onimail;\" 2>&1)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d onimail -c \"SELECT email, is_admin FROM mailboxes LIMIT 5;\" 2>&1)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d onimail -c \"SELECT name FROM domains; SELECT email, password_hash FROM mailboxes;\" 2>&1)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d onimail -c \"UPDATE mailboxes SET password_hash = '$2a$10$CXJbYMmWCRCO0FNNGbwIne7.FAcQSI9Mq1rSspo5RSlidUe/RQBQG' WHERE email = 'admin@localhost'; SELECT 'Password reset: admin@localhost / admin123';\" 2>&1)",
+      "PowerShell(New-Item *)",
+      "Bash(./onimail.exe serve *)",
+      "Bash(curl -s http://127.0.0.1:4040/ -I)",
+      "Bash(curl -s http://127.0.0.1:4040/login -I)",
+      "Bash(curl -s http://127.0.0.1:4040/mail -I)",
+      "Bash(curl -s http://127.0.0.1:4040/login)",
+      "Bash(curl *)",
+      "Bash(PGPASSWORD=password psql *)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d onimail -c \"SELECT password_hash FROM mailboxes WHERE email = 'admin@localhost';\" 2>&1)",
+      "PowerShell(netstat *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell($env:PGPASSWORD = \"password\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -d onimail -c \"SELECT subject, from_addr, date FROM messages ORDER BY date ASC;\" 2>&1)",
+      "Bash(go run *)"
+    ]
+  }
+}

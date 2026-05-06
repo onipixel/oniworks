@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -228,27 +229,10 @@ func defaultNotFound(c *onihttp.Context) error {
 }
 
 func defaultErrorHandler(c *onihttp.Context, err error) {
-	var httpErr *onihttp.HTTPError
 	code := http.StatusInternalServerError
 	msg := "internal server error"
-
-	// Walk the error chain to find an HTTPError
-	e := err
-	for e != nil {
-		if he, ok := e.(*onihttp.HTTPError); ok {
-			httpErr = he
-			break
-		}
-		// unwrap
-		type unwrapper interface{ Unwrap() error }
-		if u, ok := e.(unwrapper); ok {
-			e = u.Unwrap()
-		} else {
-			break
-		}
-	}
-
-	if httpErr != nil {
+	var httpErr *onihttp.HTTPError
+	if errors.As(err, &httpErr) {
 		code = httpErr.Code
 		msg = httpErr.Message
 	}

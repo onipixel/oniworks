@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -148,12 +149,16 @@ func (s *Store) Get(key string) (any, bool) {
 	s.mu.RLock()
 	e, ok := s.data[key]
 	s.mu.RUnlock()
-	if !ok || e.expired() {
-		if ok && e.expired() {
-			s.mu.Lock()
+	if !ok {
+		return nil, false
+	}
+	if e.expired() {
+		// Best-effort lazy eviction; evictLoop will clean it up.
+		s.mu.Lock()
+		if cur, still := s.data[key]; still && cur.expired() {
 			delete(s.data, key)
-			s.mu.Unlock()
 		}
+		s.mu.Unlock()
 		return nil, false
 	}
 	return e.Value, true
@@ -260,7 +265,7 @@ func (s *Store) CompareAndSwap(key string, expected, newValue any, ttl time.Dura
 		currentVal = e.Value
 	}
 
-	if fmt.Sprintf("%v", currentVal) != fmt.Sprintf("%v", expected) {
+	if !reflect.DeepEqual(currentVal, expected) {
 		return false
 	}
 

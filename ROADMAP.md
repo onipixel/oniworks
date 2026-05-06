@@ -5,44 +5,33 @@ Items are grouped by priority. Checked items are complete.
 
 ---
 
-## v1.1 — Developer Experience
+## v1.1 — Developer Experience ✅
 
-The highest-impact work that reduces friction for new developers the most.
+### CLI Code Generation (`oni make:*`) ✅
 
-### CLI Code Generation (`oni make:*`)
-
-The `cmd/oni` CLI currently handles database operations only. The next milestone adds code generators so developers never write boilerplate by hand.
+All generators are implemented in `cmd/oni`:
 
 | Command | Output |
 |---|---|
-| `oni make:model Post` | `app/models/post.go` with struct, TableName(), JSON tags |
-| `oni make:controller PostController` | `app/http/controllers/post_controller.go` with CRUD stubs |
-| `oni make:migration create_posts_table` | `database/migrations/<timestamp>_create_posts_table.go` |
-| `oni make:seeder PostSeeder` | `database/seeders/post_seeder.go` wired to seeder registry |
-| `oni make:channel PostChannel` | `app/channels/post_channel.go` with Subscribe stub |
-| `oni make:middleware RateLimitMiddleware` | `app/http/middleware/rate_limit.go` |
+| `oni make:model Post` | `app/models/post.go` with struct, db tags |
+| `oni make:controller PostController` | CRUD handler stubs |
+| `oni make:migration create_posts_table` | timestamped migration file |
+| `oni make:middleware RequireAdmin` | middleware template |
+| `oni make:job SendEmail` | queue job template |
+| `oni make:mail WelcomeMail` | mailer template |
+| `oni make:channel ChatChannel` | realtime channel handler |
+| `oni make:seeder PostSeeder` | database seeder |
+| `oni make:policy PostPolicy` | authorization policy |
+| `oni make:test PostTest` | test helper scaffold |
+| `oni make:resource PostResource` | JSON resource transformer |
 
-- [ ] Generator engine in `cmd/oni`
-- [ ] Embedded stub templates per generator type
-- [ ] Timestamp-prefixed migration filenames
-- [ ] Model introspection (detect existing struct, skip if present)
+### NULL-Safe Database Scanner ✅
 
-### NULL-Safe Database Scanner
+Fixed in `framework/database/scanner.go`. The `nullableScanner` type wraps non-pointer fields and leaves them at zero value when the column is `NULL`. Pointer fields (`*string`, `*int64`) remain `nil` for `NULL` — existing behaviour preserved.
 
-The scanner currently panics when a non-pointer struct field (e.g., `string`, `int64`) receives a SQL `NULL`. This is a footgun that breaks apps in production when optional columns are involved.
+### Request Validation Binding ✅
 
-**Fix:** Before calling `rows.Scan`, inspect the destination type via reflection. For non-pointer scalars, substitute a zero value when the column is `NULL` rather than propagating the conversion error.
-
-- [ ] Reflect-based null coercion in `framework/database/scanner.go`
-- [ ] Coerce `NULL → ""` for `string`, `NULL → 0` for numeric types, `NULL → false` for `bool`
-- [ ] Keep pointer fields (`*string`, `*int64`) as `nil` — existing behaviour preserved
-- [ ] Add tests covering nullable columns against all scalar types
-
-### Request Validation Binding
-
-The `framework/validation` package exists but is disconnected from the HTTP layer. Developers manually bind structs and write their own validation logic per handler.
-
-**Goal:** One-line validation in any controller:
+`c.Validate(&req)` binds the request body and runs `validate` struct tag rules in one call. On failure, returns `422 Unprocessable Entity` with a structured error map:
 
 ```go
 var req struct {
@@ -50,60 +39,39 @@ var req struct {
     Password string `json:"password" validate:"required,min=8"`
 }
 if err := c.Validate(&req); err != nil {
-    return err // automatically returns 422 with field errors
+    return err // 422 {"message":"validation failed","errors":{"email":["..."]}}
 }
 ```
 
-- [ ] `c.Validate(dest any) error` on `framework/http/context.go`
-- [ ] Automatic 422 response with structured field error map
-- [ ] Built-in rules: `required`, `email`, `min`, `max`, `url`, `uuid`, `in`, `numeric`
-- [ ] Custom rule registration via `validation.RegisterRule`
+### Hot Reload Integration ✅
 
-### Hot Reload Integration
-
-Developers currently rebuild the binary manually on every backend change. The framework should make this effortless.
-
-- [ ] Document `air` integration with a ready-made `.air.toml` in the project scaffold
-- [ ] Add `oni serve --watch` flag that shells out to `air` if detected
-- [ ] Include `air` in the recommended dev dependency list in the docs
+`oni serve` detects and uses [Air](https://github.com/air-verse/air) for live reload. A `.air.toml` is scaffolded into new projects.
 
 ---
 
-## v1.2 — Data Layer
+## v1.2 — Data Layer ✅
 
-### Pagination Helper
+### Pagination Helper ✅
 
-Every controller currently reimplements offset/limit math manually. A first-class paginator removes this.
-
-**API:**
+`Builder.Paginate(page, perPage int, dest any)` runs a COUNT and a SELECT in sequence and returns a `*Page[any]`:
 
 ```go
-result, err := database.Table("posts").
+var posts []Post
+page, err := db.Table("posts").
     Where("user_id = ?", userID).
     OrderBy("created_at DESC").
-    Paginate(page, 20)
+    Paginate(1, 20, &posts)
 
-// result.Data      []any (or use generic Paginate[T])
-// result.Total     int64
-// result.Page      int
-// result.PerPage   int
-// result.LastPage  int
-// result.HasMore   bool
+// page.Total, page.LastPage, page.From, page.To, page.CurrentPage, page.PerPage
 ```
 
-- [ ] `Paginate(page, perPage int)` method on `Builder`
-- [ ] Generic `PaginateTyped[T](page, perPage int)` variant
-- [ ] COUNT query runs in parallel with data query
-- [ ] JSON serialisation matches common API conventions (`meta.total`, `meta.last_page`)
+### Seeder Framework ✅
 
-### Seeder Framework Wire-up
+`oni db:seed` and `oni db:seed --class=PostSeeder` are implemented. See [CLI docs](/docs/cli).
 
-`framework/seeder` exists but has no CLI hook and no documentation. The OniGram seeder was written as a standalone binary as a workaround.
+### Soft Deletes ✅
 
-- [ ] `oni db:seed` — runs all registered seeders in order
-- [ ] `oni db:seed --class=PostSeeder` — run a single named seeder
-- [ ] Seeders respect `oni migrate:fresh && oni db:seed` for full reset workflow
-- [ ] Document seeder registration pattern in the README
+`Builder.SoftDelete()` adds `deleted_at IS NULL` automatically. Use `.WithTrashed()` to include deleted rows. Use `.SoftDelete().Where("id = ?", id).Update(Map{"deleted_at": time.Now()})` to soft-delete.
 
 ---
 
@@ -111,13 +79,11 @@ result, err := database.Table("posts").
 
 ### OAuth / Social Login
 
-Only JWT with email/password is supported. Most modern apps require at least one social login option.
-
-- [ ] `framework/auth/oauth.go` — OAuth2 flow handler (state, callback, token exchange)
+- [ ] `framework/auth/oauth.go` — OAuth2 flow (state, callback, token exchange)
 - [ ] Built-in providers: Google, GitHub, Discord
-- [ ] Provider config via `.env` (`OAUTH_GOOGLE_CLIENT_ID`, etc.)
-- [ ] Extensible `Provider` interface for custom OAuth2 sources
-- [ ] Auto-creates user on first login; links provider to existing account by email
+- [ ] Provider config via `.env`
+- [ ] Extensible `Provider` interface
+- [ ] Auto-creates user on first login; links by email
 
 ---
 
@@ -125,44 +91,41 @@ Only JWT with email/password is supported. Most modern apps require at least one
 
 ### Image Processing
 
-Every app that handles user uploads needs resizing and format conversion. Without it, developers reach for external services immediately.
-
-- [ ] `framework/storage/image.go` — image processing pipeline
-- [ ] Resize to multiple named variants: `thumbnail` (150×150), `medium` (600px wide), `original`
-- [ ] Convert to WebP automatically with JPEG/PNG fallback
-- [ ] Strip EXIF metadata on ingest for privacy
-- [ ] Lazy variant generation (generate on first request, cache thereafter)
-- [ ] Works with both local disk and S3 storage drivers
+- [ ] `framework/storage/image.go` — resize pipeline
+- [ ] Named variants: `thumbnail` (150×150), `medium` (600px wide), `original`
+- [ ] Convert to WebP with JPEG/PNG fallback
+- [ ] Strip EXIF on ingest
+- [ ] Lazy variant generation
+- [ ] Works with local and S3 drivers
 
 ---
 
 ## Backlog (Unscheduled)
 
-These are valid improvements without a target version yet.
-
-- **GraphQL layer** — optional `framework/graphql` package wrapping the router
-- **OpenAPI generation** — auto-generate Swagger docs from route + struct definitions
-- **Multi-tenancy helpers** — scoped query builder with tenant isolation
-- **Soft deletes** — `deleted_at` support in the query builder (`WithTrashed`, `OnlyTrashed`)
-- **Model events** — `BeforeCreate`, `AfterSave`, `BeforeDelete` hooks wired to the ORM
+- **GraphQL layer** — optional `framework/graphql` package
+- **OpenAPI generation** — Swagger docs from route + struct definitions
+- **Multi-tenancy helpers** — scoped query builder
 - **Two-factor auth** — TOTP support in `framework/auth`
-- **WebSocket presence page** — who is online, typing indicators
-- **Rate limiter per-user** — current rate limiter is IP-based only
 - **Redis session driver** — `framework/session/drivers/redis.go`
-- **Broadcast queue** — offload WebSocket broadcasts to the job queue for scale
+- **Rate limiter per-user** — current limiter is IP-based only
+- **Broadcast queue** — offload WebSocket broadcasts to the job queue
 
 ---
 
-## Discovered During OniGram (v1.0 Retrospective)
+## Fixed Issues
 
-Issues found while building the OniGram Instagram clone test case.
-
-| Issue | Severity | Status |
-|---|---|---|
-| `notifications` endpoint returned `null` instead of `[]` | Medium | Fixed in v1.0 |
-| Feed `INNER JOIN` excluded own posts | High | Fixed in v1.0 |
-| `Builder` lacked public `Exec()` for raw write queries | Medium | Fixed in v1.0 |
-| Scanner crashed on `NULL post_id` (non-pointer `int64`) | High | Workaround: use `*int64`; permanent fix in v1.1 |
-| Scanner crashed on `NULL avatar_path` in raw queries | High | Workaround: `COALESCE`; permanent fix in v1.1 |
-| Dynamic Tailwind class names stripped by build scanner | Medium | Workaround: inline styles; document in frontend guide |
-| `frontend.ViteTag` in dev mode requires Vite running separately | Low | By design; document workflow |
+| Issue | Status |
+|---|---|
+| `notifications` endpoint returned `null` instead of `[]` | Fixed v1.0 |
+| Feed `INNER JOIN` excluded own posts | Fixed v1.0 |
+| `Builder` lacked public `Exec()` for raw write queries | Fixed v1.0 |
+| Scanner crashed on `NULL` for non-pointer fields | Fixed v1.1 |
+| `Guard.cachedUser` shared across requests (auth bypass) | Fixed v1.1 |
+| Container singleton race (double construction) | Fixed v1.1 |
+| `Hub.ServeHTTP` not mountable on OniWorks router | Fixed v1.1 — use `hub.Handler()` |
+| `Delete()`/`Update()` without WHERE silently mutated all rows | Fixed v1.1 — returns error |
+| `globalDB` data race on concurrent access | Fixed v1.1 — atomic.Pointer |
+| Transaction did not rollback on panic | Fixed v1.1 |
+| `CompareAndSwap` used string comparison for equality | Fixed v1.1 |
+| Default query log level was INFO (flooded logs) | Fixed v1.1 — defaults to DEBUG |
+| `callSliceHook` AfterFind not called per element | Fixed v1.1 |

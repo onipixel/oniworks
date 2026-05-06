@@ -99,6 +99,19 @@ func (v *Validator) ValidateMap(data map[string]any, rules Rules) Errors {
 // Rules is a map of field name → rule string for use with ValidateMap.
 type Rules map[string]string
 
+// ─────────────────────────── default validator ────────────────────
+
+var defaultValidator = New()
+
+// Default returns the package-level default Validator.
+func Default() *Validator { return defaultValidator }
+
+// SetDefault replaces the package-level default Validator.
+func SetDefault(v *Validator) { defaultValidator = v }
+
+// Validate is a package-level shortcut using the default Validator.
+func Validate(s any) error { return defaultValidator.Validate(s) }
+
 func (v *Validator) validateStruct(rv reflect.Value, errs Errors, prefix string) {
 	for rv.Kind() == reflect.Ptr {
 		if rv.IsNil() {

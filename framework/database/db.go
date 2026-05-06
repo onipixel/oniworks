@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -121,10 +121,11 @@ func Open(cfg Config) (*DB, error) {
 	sqlDB.SetConnMaxLifetime(cfg.MaxLifetime)
 
 	db := &DB{
-		sqlDB:   sqlDB,
-		driver:  cfg.Driver,
-		grammar: grammar,
-		logger:  slog.Default(),
+		sqlDB:    sqlDB,
+		driver:   cfg.Driver,
+		grammar:  grammar,
+		logger:   slog.Default(),
+		logLevel: slog.LevelDebug,
 	}
 	return db, nil
 }
@@ -216,9 +217,18 @@ func (db *DB) TransactionContext(ctx context.Context, fn func(tx *DB) error) err
 	}
 	txDB := &DB{sqlDB: db.sqlDB, tx: tx, driver: db.driver, grammar: db.grammar, txDepth: 1, logger: db.logger}
 
-	if err := fn(txDB); err != nil {
+	var fnErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fnErr = fmt.Errorf("database: transaction panic: %v", r)
+			}
+		}()
+		fnErr = fn(txDB)
+	}()
+	if fnErr != nil {
 		_ = tx.Rollback()
-		return err
+		return fnErr
 	}
 	return tx.Commit()
 }
@@ -303,20 +313,18 @@ func (db *DB) LoadContext(ctx context.Context, dest any, relations ...string) er
 // ─────────────────────────── global pool ──────────────────────────
 
 // globalDB is the application-level default DB instance (optional convenience).
-var (
-	globalDB   *DB
-	globalOnce sync.Once
-)
+var globalDB atomic.Pointer[DB]
 
 // SetDefault sets the package-level default DB used by top-level Table() / Raw() calls.
-func SetDefault(db *DB) { globalDB = db }
+func SetDefault(db *DB) { globalDB.Store(db) }
 
 // Default returns the package-level default DB, or panics if not set.
 func Default() *DB {
-	if globalDB == nil {
+	db := globalDB.Load()
+	if db == nil {
 		panic("database: default DB not set — call database.SetDefault(db) during application boot")
 	}
-	return globalDB
+	return db
 }
 
 // Table is a package-level shorthand: database.Table("users").Where(...)

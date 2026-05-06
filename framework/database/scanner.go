@@ -223,9 +223,116 @@ func scanRowToStruct(rows *sql.Rows, cols []string, dest any) error {
 			ptrs[i] = &discard
 			continue
 		}
-		ptrs[i] = rv.FieldByIndex(idx).Addr().Interface()
+		f := rv.FieldByIndex(idx)
+		// If the field is a pointer, scan directly (nil = NULL is fine)
+		if f.Kind() == reflect.Ptr {
+			if f.IsNil() {
+				f.Set(reflect.New(f.Type().Elem()))
+			}
+			ptrs[i] = f.Interface()
+		} else {
+			// Wrap in a nullable scanner so NULL doesn't panic
+			ptrs[i] = &nullableScanner{field: f}
+		}
 	}
 	return rows.Scan(ptrs...)
+}
+
+// nullableScanner accepts a SQL value (including NULL) and sets the target field.
+type nullableScanner struct {
+	field reflect.Value
+}
+
+func (ns *nullableScanner) Scan(src any) error {
+	if src == nil {
+		// Leave the field at its zero value
+		return nil
+	}
+	// Try direct assignment via convertAssign
+	dest := ns.field.Addr().Interface()
+	return convertAssign(dest, src)
+}
+
+// convertAssign is a minimal sql value converter.
+func convertAssign(dest, src any) error {
+	switch d := dest.(type) {
+	case *string:
+		switch s := src.(type) {
+		case string:
+			*d = s
+		case []byte:
+			*d = string(s)
+		default:
+			*d = fmt.Sprintf("%v", src)
+		}
+		return nil
+	case *[]byte:
+		switch s := src.(type) {
+		case []byte:
+			*d = s
+		case string:
+			*d = []byte(s)
+		}
+		return nil
+	case *int64:
+		switch s := src.(type) {
+		case int64:
+			*d = s
+		case int32:
+			*d = int64(s)
+		case float64:
+			*d = int64(s)
+		}
+		return nil
+	case *int:
+		switch s := src.(type) {
+		case int64:
+			*d = int(s)
+		case int:
+			*d = s
+		case float64:
+			*d = int(s)
+		}
+		return nil
+	case *bool:
+		switch s := src.(type) {
+		case bool:
+			*d = s
+		case int64:
+			*d = s != 0
+		}
+		return nil
+	case *float64:
+		switch s := src.(type) {
+		case float64:
+			*d = s
+		case int64:
+			*d = float64(s)
+		}
+		return nil
+	case *time.Time:
+		switch s := src.(type) {
+		case time.Time:
+			*d = s
+		}
+		return nil
+	}
+	// Fallback: use reflect for compatible types
+	dv := reflect.ValueOf(dest)
+	if dv.Kind() != reflect.Ptr {
+		return fmt.Errorf("database: scan dest must be a pointer")
+	}
+	sv := reflect.ValueOf(src)
+	dv = dv.Elem()
+	if sv.Type().AssignableTo(dv.Type()) {
+		dv.Set(sv)
+		return nil
+	}
+	if sv.Type().ConvertibleTo(dv.Type()) {
+		dv.Set(sv.Convert(dv.Type()))
+		return nil
+	}
+	return fmt.Errorf("database: cannot convert %T to %T", src, dest)
 }
 
 func scanRows(rows *sql.Rows, dest any) error {

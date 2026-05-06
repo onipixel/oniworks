@@ -97,7 +97,7 @@ func (c *Container) Make(abstract string) (any, error) {
 	}
 	c.mu.RUnlock()
 
-	// Return cached singleton instance
+	// Fast path: return existing singleton instance
 	c.mu.RLock()
 	if inst, ok := c.instances[abstract]; ok {
 		c.mu.RUnlock()
@@ -118,6 +118,11 @@ func (c *Container) Make(abstract string) (any, error) {
 
 	if isSingleton {
 		c.mu.Lock()
+		// Double-check: another goroutine may have stored an instance while we built ours.
+		if existing, ok := c.instances[abstract]; ok {
+			c.mu.Unlock()
+			return existing, nil
+		}
 		c.instances[abstract] = instance
 		c.mu.Unlock()
 	}
@@ -144,7 +149,12 @@ func (c *Container) MakeInto(abstract string, dest any) error {
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("container: dest must be a non-nil pointer, got %T", dest)
 	}
-	rv.Elem().Set(reflect.ValueOf(instance))
+	dv := rv.Elem()
+	iv := reflect.ValueOf(instance)
+	if !iv.Type().AssignableTo(dv.Type()) {
+		return fmt.Errorf("container: cannot assign %T to %T", instance, dest)
+	}
+	dv.Set(iv)
 	return nil
 }
 
