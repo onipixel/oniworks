@@ -1,36 +1,101 @@
 package controllers
 
 import (
+	"github.com/onipixel/oniworks/framework/database"
 	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
 // {{.Name}}Controller handles HTTP requests for the {{.Name}} resource.
-type {{.Name}}Controller struct{}
-
-// Index returns a list of {{.Name}} records.
-func (ctrl *{{.Name}}Controller) Index(c *onihttp.Context) error {
-	return c.JSON(200, map[string]any{"data": []any{}})
+// Wire routes in your router:
+//
+//	ctrl := &{{.Name}}Controller{db: db}
+//	r.Get("/{{.NameSnake}}s",         ctrl.Index)
+//	r.Post("/{{.NameSnake}}s",        ctrl.Store)
+//	r.Get("/{{.NameSnake}}s/:id",     ctrl.Show)
+//	r.Put("/{{.NameSnake}}s/:id",     ctrl.Update)
+//	r.Delete("/{{.NameSnake}}s/:id",  ctrl.Destroy)
+type {{.Name}}Controller struct {
+	db *database.DB
 }
 
-// Show returns a single {{.Name}} record.
+// Index returns a paginated list of {{.Name}} records.
+func (ctrl *{{.Name}}Controller) Index(c *onihttp.Context) error {
+	page := 1
+	var items []map[string]any
+	result, err := ctrl.db.Table("{{.NameSnake}}s").
+		OrderBy("id DESC").
+		Paginate(page, 20, &items)
+	if err != nil {
+		return c.Abort(500, "failed to load {{.NameSnake}}s")
+	}
+	return c.JSON(200, onihttp.Map{
+		"data": items,
+		"meta": onihttp.Map{
+			"total":        result.Total,
+			"current_page": result.CurrentPage,
+			"last_page":    result.LastPage,
+			"per_page":     result.PerPage,
+		},
+	})
+}
+
+// Show returns a single {{.Name}} by ID.
 func (ctrl *{{.Name}}Controller) Show(c *onihttp.Context) error {
 	id := c.Param("id")
-	return c.JSON(200, map[string]any{"id": id})
+	var item map[string]any
+	if err := ctrl.db.Table("{{.NameSnake}}s").Where("id = ?", id).First(&item); err != nil {
+		if err == database.ErrNotFound {
+			return c.Abort(404, "{{.NameSnake}} not found")
+		}
+		return c.Abort(500, "failed to load {{.NameSnake}}")
+	}
+	return c.JSON(200, onihttp.Map{"data": item})
 }
 
-// Store creates a new {{.Name}} record.
+// Store validates and creates a new {{.Name}}.
 func (ctrl *{{.Name}}Controller) Store(c *onihttp.Context) error {
-	return c.JSON(201, map[string]any{"message": "created"})
+	var in struct {
+		// Add your input fields here and validate them:
+		// Name string `json:"name" validate:"required,min=2,max=255"`
+	}
+	if err := c.Validate(&in); err != nil {
+		return err // 422 with field errors
+	}
+	row := database.Map{
+		// Map input fields to columns:
+		// "name": in.Name,
+	}
+	if err := ctrl.db.Table("{{.NameSnake}}s").Insert(row); err != nil {
+		return c.Abort(500, "failed to create {{.NameSnake}}")
+	}
+	return c.JSON(201, onihttp.Map{"data": row})
 }
 
-// Update modifies a {{.Name}} record.
+// Update validates and modifies an existing {{.Name}}.
 func (ctrl *{{.Name}}Controller) Update(c *onihttp.Context) error {
 	id := c.Param("id")
-	return c.JSON(200, map[string]any{"id": id, "message": "updated"})
+	var in struct {
+		// Add your input fields here:
+		// Name string `json:"name" validate:"required,min=2,max=255"`
+	}
+	if err := c.Validate(&in); err != nil {
+		return err
+	}
+	if err := ctrl.db.Table("{{.NameSnake}}s").
+		Where("id = ?", id).
+		Update(database.Map{
+			// "name": in.Name,
+		}); err != nil {
+		return c.Abort(500, "failed to update {{.NameSnake}}")
+	}
+	return c.JSON(200, onihttp.Map{"message": "updated"})
 }
 
-// Destroy deletes a {{.Name}} record.
+// Destroy deletes a {{.Name}} by ID.
 func (ctrl *{{.Name}}Controller) Destroy(c *onihttp.Context) error {
 	id := c.Param("id")
-	return c.JSON(200, map[string]any{"id": id, "message": "deleted"})
+	if err := ctrl.db.Table("{{.NameSnake}}s").Where("id = ?", id).Delete(); err != nil {
+		return c.Abort(500, "failed to delete {{.NameSnake}}")
+	}
+	return c.NoContent()
 }

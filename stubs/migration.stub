@@ -4,7 +4,7 @@ import (
 	onimig "github.com/onipixel/oniworks/framework/migrations"
 )
 
-// Migration{{.Timestamp}} implements the {{.Name}} migration.
+// Migration{{.Timestamp}} creates the {{.NameSnake}}s table.
 type Migration{{.Timestamp}} struct{}
 
 func init() {
@@ -12,12 +12,19 @@ func init() {
 }
 
 func (m *Migration{{.Timestamp}}) Up(s *onimig.Schema) {
-	s.Create("{{.NameSnake}}", func(t *onimig.Table) {
-		t.ID()
-		t.Timestamps()
+	s.Create("{{.NameSnake}}s", func(t *onimig.Table) {
+		t.ID()                            // id BIGSERIAL PRIMARY KEY
+		// t.String("name", 255)          // VARCHAR(255) NOT NULL
+		// t.Text("body")                 // TEXT NOT NULL
+		// t.BigInt("user_id").Index()    // FK column + index
+		// t.Foreign("user_id", "users")  // REFERENCES users(id)
+		// t.Boolean("active").Default("true")
+		// t.Integer("sort_order").Default("0")
+		// t.Nullable().String("slug", 255).Unique()
+		t.Timestamps()                    // created_at, updated_at TIMESTAMPTZ
 	})
 }
 
 func (m *Migration{{.Timestamp}}) Down(s *onimig.Schema) {
-	s.DropIfExists("{{.NameSnake}}")
+	s.DropIfExists("{{.NameSnake}}s")
 }

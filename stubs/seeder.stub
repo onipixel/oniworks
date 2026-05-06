@@ -2,16 +2,36 @@ package seeders
 
 import (
 	"context"
+	"time"
 
 	"github.com/onipixel/oniworks/framework/database"
 )
 
-// {{.Name}}Seeder seeds the {{.NameSnake}}s table.
+// {{.Name}}Seeder seeds the {{.NameSnake}}s table with sample data.
+// Run with: oni db:seed --class={{.Name}}Seeder
 type {{.Name}}Seeder struct{}
 
-// Run inserts seed data into the database.
+// Run inserts seed rows. Called inside a transaction — return an error to abort.
 func (s *{{.Name}}Seeder) Run(ctx context.Context, db *database.DB) error {
-	return db.Table("{{.NameSnake}}s").Insert(map[string]any{
-		// "name": "Example",
-	})
+	rows := []database.Map{
+		{
+			// "name":       "First {{.Name}}",
+			// "active":     true,
+			"created_at": time.Now(),
+			"updated_at": time.Now(),
+		},
+		{
+			// "name":       "Second {{.Name}}",
+			// "active":     true,
+			"created_at": time.Now(),
+			"updated_at": time.Now(),
+		},
+	}
+
+	for _, row := range rows {
+		if err := db.Table("{{.NameSnake}}s").Insert(row); err != nil {
+			return err
+		}
+	}
+	return nil
 }

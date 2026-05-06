@@ -1,13 +1,54 @@
 package models
 
-import "time"
+import (
+	"time"
 
-// {{.Name}} represents the {{.NameSnake}}s table.
+	"github.com/onipixel/oniworks/framework/database"
+)
+
+// {{.Name}} represents a row in the {{.NameSnake}}s table.
 type {{.Name}} struct {
-	ID        int64     `db:"id"      json:"id"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+	ID        int64     `db:"id,primaryKey,autoIncrement" json:"id"`
+	CreatedAt time.Time `db:"created_at,autoTime"          json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at,autoTime"          json:"updated_at"`
 }
 
-// TableName returns the database table name for {{.Name}}.
-func ({{.Name}}) TableName() string { return "{{.NameSnake}}s" }
+// ─── Query helpers ────────────────────────────────────────────────
+
+// Find returns a {{.Name}} by its primary key.
+func Find{{.Name}}(db *database.DB, id int64) (*{{.Name}}, error) {
+	var m {{.Name}}
+	if err := db.Table("{{.NameSnake}}s").Where("id = ?", id).First(&m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// All{{.Name}}s returns all rows, ordered by newest first.
+func All{{.Name}}s(db *database.DB) ([]{{.Name}}, error) {
+	var rows []{{.Name}}
+	err := db.Table("{{.NameSnake}}s").OrderBy("id DESC").All(&rows)
+	return rows, err
+}
+
+// ─── Lifecycle hooks ──────────────────────────────────────────────
+
+// BeforeCreate runs before INSERT. Returning an error aborts the insert.
+func (m *{{.Name}}) BeforeCreate(db *database.DB) error {
+	return nil
+}
+
+// AfterCreate runs after a successful INSERT.
+func (m *{{.Name}}) AfterCreate(db *database.DB) error {
+	return nil
+}
+
+// BeforeSave runs before UPDATE.
+func (m *{{.Name}}) BeforeSave(db *database.DB) error {
+	return nil
+}
+
+// AfterFind runs after every SELECT that populates this struct.
+func (m *{{.Name}}) AfterFind(db *database.DB) error {
+	return nil
+}

@@ -6,13 +6,33 @@ import (
 	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
-// {{.Name}} is a custom HTTP middleware.
-func {{.Name}}() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// TODO: implement {{.Name}} logic
-			_ = onihttp.NewContext(w, r, nil)
-			next.ServeHTTP(w, r)
-		})
+// {{.Name}} returns an OniWorks middleware function.
+// Register it globally or per-route:
+//
+//	app.Use(middleware.{{.Name}}())
+//	r.Get("/path", handler, middleware.{{.Name}}())
+func {{.Name}}() onihttp.MiddlewareFunc {
+	return func(next onihttp.HandlerFunc) onihttp.HandlerFunc {
+		return func(c *onihttp.Context) error {
+			// ── Before handler ────────────────────────────────────
+			// Example: check a custom header
+			// if c.Header("X-Api-Version") == "" {
+			// 	return c.Abort(http.StatusBadRequest, "X-Api-Version header required")
+			// }
+
+			// Pass to the next handler
+			if err := next(c); err != nil {
+				return err
+			}
+
+			// ── After handler ─────────────────────────────────────
+			// Example: set a response header
+			// c.Response.Header().Set("X-Powered-By", "OniWorks")
+
+			return nil
+		}
 	}
 }
+
+// Ensure net/http is used (remove if not needed above).
+var _ = http.StatusOK

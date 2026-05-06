@@ -1,42 +1,49 @@
 package policies
 
-import "github.com/onipixel/oniworks/framework/roles"
-
 // {{.Name}}Policy defines authorization rules for {{.Name}} resources.
+// Use it in handlers via your RBAC manager:
+//
+//	policy := &policies.{{.Name}}Policy{}
+//	if !policy.View(currentUser, resource) {
+//	    return c.Abort(403, "forbidden")
+//	}
 type {{.Name}}Policy struct{}
 
-// Before runs before all policy checks. Return nil to continue.
-func (p *{{.Name}}Policy) Before(user any, action string) *bool {
-	return nil
+// userWithRoles is a minimal interface that any User model with role support satisfies.
+type userWithRoles interface {
+	HasRole(role string) bool
+	GetID() int64
 }
 
-// View determines if the user can view a {{.Name}}.
+// View returns true if the user may read this resource.
+// Default: all authenticated users can view.
 func (p *{{.Name}}Policy) View(user any, resource any) bool {
-	return true
+	_, ok := user.(userWithRoles)
+	return ok
 }
 
-// Create determines if the user can create a {{.Name}}.
+// Create returns true if the user may create a new resource.
+// Default: admin and editor roles.
 func (p *{{.Name}}Policy) Create(user any) bool {
-	u, ok := user.(interface{ HasRole(string) bool })
+	u, ok := user.(userWithRoles)
 	if !ok {
 		return false
 	}
 	return u.HasRole("admin") || u.HasRole("editor")
 }
 
-// Update determines if the user can update a {{.Name}}.
+// Update returns true if the user may modify this resource.
+// Default: same as Create.
 func (p *{{.Name}}Policy) Update(user any, resource any) bool {
 	return p.Create(user)
 }
 
-// Delete determines if the user can delete a {{.Name}}.
+// Delete returns true if the user may remove this resource.
+// Default: admin only.
 func (p *{{.Name}}Policy) Delete(user any, resource any) bool {
-	u, ok := user.(interface{ HasRole(string) bool })
+	u, ok := user.(userWithRoles)
 	if !ok {
 		return false
 	}
 	return u.HasRole("admin")
 }
-
-// ensure roles is used
-var _ = roles.NewManager()

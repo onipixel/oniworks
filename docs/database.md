@@ -86,6 +86,39 @@ var emails []string
 err = db.Table("users").Pluck("email", &emails)
 ```
 
+## Pagination
+
+```go
+var posts []Post
+page, err := db.Table("posts").
+    Where("user_id = ?", userID).
+    OrderBy("created_at DESC").
+    Paginate(1, 20, &posts)
+
+// page.Total, page.CurrentPage, page.LastPage, page.PerPage, page.From, page.To
+```
+
+## Soft Deletes
+
+```go
+// Automatically adds "deleted_at IS NULL" to every query
+var posts []Post
+err := db.Table("posts").SoftDelete().Where("user_id = ?", id).All(&posts)
+
+// Include deleted rows
+err := db.Table("posts").SoftDelete().WithTrashed().All(&posts)
+```
+
+## Raw WHERE
+
+```go
+// Full control over the WHERE clause
+db.Table("orders").WhereRaw("total BETWEEN ? AND ?", 100, 500).All(&orders)
+
+// Required when deleting/updating all rows (safety guard)
+db.Table("sessions").WhereRaw("1=1").Delete()
+```
+
 ## Eager Loading (Batch, No N+1)
 
 OniWorks eager loads relationships in **one SQL query per relation** using `IN` clauses:
@@ -123,10 +156,10 @@ err := db.Transaction(func(tx *database.DB) error {
 Implement any of these interfaces on your model:
 
 ```go
-func (u *User) BeforeCreate() error { u.CreatedAt = time.Now(); return nil }
-func (u *User) AfterCreate() error  { slog.Info("user created", "id", u.ID); return nil }
-func (u *User) BeforeSave() error   { return u.validate() }
-func (u *User) AfterFind() error    { u.FullName = u.FirstName + " " + u.LastName; return nil }
+func (u *User) BeforeCreate(db *database.DB) error { return nil }
+func (u *User) AfterCreate(db *database.DB) error  { slog.Info("user created", "id", u.ID); return nil }
+func (u *User) BeforeSave(db *database.DB) error   { return u.validate() }
+func (u *User) AfterFind(db *database.DB) error    { u.FullName = u.FirstName + " " + u.LastName; return nil }
 ```
 
 Full list: `BeforeCreate`, `AfterCreate`, `BeforeSave`, `AfterSave`, `BeforeUpdate`, `AfterUpdate`, `BeforeDelete`, `AfterDelete`, `AfterFind`.

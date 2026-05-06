@@ -317,44 +317,36 @@ oni health                      Run health checks
 
 ## Documentation
 
-Full documentation is in [`sample/oniworks-site/content/docs/`](sample/oniworks-site/content/docs/):
-
 | Guide | |
 |---|---|
-| [Getting Started](sample/oniworks-site/content/docs/getting-started.md) | Install, scaffold, run |
-| [Routing](sample/oniworks-site/content/docs/routing.md) | Routes, params, middleware, named routes |
-| [Database](sample/oniworks-site/content/docs/database.md) | Query builder, eager loading, migrations |
-| [Query Builder](sample/oniworks-site/content/docs/query-builder.md) | Full builder API reference |
-| [Authentication](sample/oniworks-site/content/docs/auth.md) | Session auth, JWT, CSRF, RBAC |
-| [Validation](sample/oniworks-site/content/docs/validation.md) | `c.Validate()`, struct tags, custom rules |
-| [Oni Socket](sample/oniworks-site/content/docs/realtime.md) | WebSockets, channels, presence |
-| [Oni Memory](sample/oniworks-site/content/docs/memory.md) | KV store, pub/sub, distributed mode |
-| [Queue & Jobs](sample/oniworks-site/content/docs/queue.md) | Background jobs, retries, drivers |
-| [Middleware](sample/oniworks-site/content/docs/middleware.md) | Built-in and custom middleware |
-| [CLI Reference](sample/oniworks-site/content/docs/cli.md) | All `oni` commands |
-| [Testing](sample/oniworks-site/content/docs/testing.md) | HTTP test helpers, assertions |
-| [Deployment](sample/oniworks-site/content/docs/deployment.md) | Production + auto TLS |
+| [Getting Started](docs/getting-started.md) | Install, scaffold, first app |
+| [Routing](docs/routing.md) | Routes, params, middleware, groups |
+| [Database & ORM](docs/database.md) | Query builder, eager loading, migrations |
+| [Authentication](docs/auth.md) | JWT, session auth, CSRF, RBAC |
+| [Realtime — Oni Socket](docs/realtime.md) | WebSockets, channels, presence |
+| [Oni Memory](docs/memory.md) | KV store, pub/sub, distributed mode |
+| [Frontend](docs/frontend.md) | Vite + TypeScript + Tailwind integration |
+| [CLI Reference](docs/cli.md) | All `oni` commands |
+| [Testing](docs/testing.md) | HTTP test helpers, assertions |
+
+> 📖 Full documentation site — coming soon at **oniworks.dev**
 
 ---
 
-## OniMail — Built with OniWorks
+## OniMail — Coming Soon
 
-[OniMail](sample/onimail/) is a production self-hosted email platform built entirely with the OniWorks framework. It demonstrates real-world usage across every framework layer:
+OniMail is a self-hosted email platform being built on top of OniWorks. It will be released as a **separate package** once it reaches a stable state.
 
-- Full SMTP server (inbound + outbound with DKIM/SPF/DMARC)
-- Full IMAP4rev2 server with IDLE push
-- Gmail-quality webmail UI (TypeScript + Tailwind)
-- Real-time inbox via Oni Socket WebSocket
+> ⏳ **Work in progress** — core SMTP/IMAP/webmail functionality works, but several production features (admin UI, S3 storage, auto-TLS, quota enforcement) are still being completed.
+
+**What it will include:**
+- Full SMTP + IMAP4rev2 server
+- Gmail-quality webmail (TypeScript + Tailwind)
+- Real-time inbox via Oni Socket
+- DKIM / SPF / DMARC authentication
 - Marketing campaigns with open/click tracking
-- Multi-domain support with admin panel
 
-```bash
-cd sample/onimail
-go build -o onimail ./cmd/onimail
-./onimail install --domain mail.example.com --admin admin@example.com
-./onimail migrate
-./onimail serve
-```
+Follow this repo for updates.
 
 ---
 
@@ -375,6 +367,8 @@ OniWorks v1.1 — all core features stable.
 - [x] Admin panel
 - [x] Vite + TypeScript + Tailwind v4
 - [x] Stress test suite
+- [ ] Documentation site (coming soon)
+- [ ] OniMail package (coming soon)
 - [ ] OAuth / social login (v1.3)
 - [ ] Image processing (v1.4)
 

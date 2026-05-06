@@ -1,16 +1,47 @@
 package tests
 
 import (
+	"net/http"
 	"testing"
 
+	onihttp "github.com/onipixel/oniworks/framework/http"
 	onitest "github.com/onipixel/oniworks/framework/testing"
+	"github.com/onipixel/oniworks/framework/routing"
 )
 
 func Test{{.Name}}(t *testing.T) {
-	app := onitest.NewApp(t)
-	defer app.Close()
+	// Build a minimal router with the routes under test.
+	// Replace these with your real controller and routes.
+	r := routing.New()
+	r.Get("/{{.NameSnake}}s", func(c *onihttp.Context) error {
+		return c.JSON(http.StatusOK, onihttp.Map{"data": []any{}})
+	})
+	r.Post("/{{.NameSnake}}s", func(c *onihttp.Context) error {
+		return c.JSON(http.StatusCreated, onihttp.Map{"message": "created"})
+	})
+	r.Get("/{{.NameSnake}}s/:id", func(c *onihttp.Context) error {
+		return c.JSON(http.StatusOK, onihttp.Map{"id": c.Param("id")})
+	})
 
-	resp := app.GET("/").Send()
-	resp.AssertStatus(200)
-	resp.AssertJSON("message", "Welcome to OniWorks!")
+	a := onitest.NewApp(t, r)
+
+	t.Run("index returns 200", func(t *testing.T) {
+		a.GET("/{{.NameSnake}}s").Send().AssertOK()
+	})
+
+	t.Run("store returns 201", func(t *testing.T) {
+		a.POST("/{{.NameSnake}}s", map[string]any{
+			// "name": "Test {{.Name}}",
+		}).Send().AssertCreated()
+	})
+
+	t.Run("show returns 200 with id", func(t *testing.T) {
+		resp := a.GET("/{{.NameSnake}}s/1").Send()
+		resp.AssertOK()
+		resp.AssertJSON("id", "1")
+	})
+
+	t.Run("not found returns 404", func(t *testing.T) {
+		a.GET("/{{.NameSnake}}s/99999").Send().AssertNotFound()
+	})
 }

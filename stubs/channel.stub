@@ -4,19 +4,26 @@ import (
 	"github.com/onipixel/oniworks/framework/realtime"
 )
 
-// Register{{.Name}}Channel registers the {{.Name}} channel handler on the hub.
+// Register{{.Name}}Channel wires the {{.Name}} channel handler onto the hub.
+// Call this during app bootstrap:
 //
 //	channels.Register{{.Name}}Channel(hub)
 func Register{{.Name}}Channel(hub *realtime.Hub) {
-	hub.Channel("{{.NameSnake}}.{id}", func(c *realtime.Conn, e *realtime.Event) error {
-		room := e.Params["id"]
-		// TODO: implement {{.Name}} channel logic
-		return hub.Broadcast("{{.NameSnake}}."+room, map[string]any{
-			"from":    c.UserID,
+	// Handle incoming events on "{{.NameSnake}}.{id}" channels.
+	// e.Params["id"] holds the wildcard segment.
+	hub.Channel("{{.NameSnake}}.{id}", func(conn *realtime.Conn, e *realtime.Event) error {
+		roomID := e.Params["id"]
+
+		// Broadcast the event to everyone subscribed to this room,
+		// including connections on other nodes via Oni Memory.
+		return hub.Broadcast("{{.NameSnake}}."+roomID, map[string]any{
+			"type":    e.Type,
+			"from":    conn.UserID,
 			"payload": e.Payload,
 		})
 	})
 
-	// Uncomment to enable presence tracking
-	// hub.Presence("{{.NameSnake}}.{id}")
+	// Enable presence tracking — records who is online per room.
+	// hub.Members("{{.NameSnake}}.42") will return all active connections.
+	hub.Presence("{{.NameSnake}}.{id}")
 }

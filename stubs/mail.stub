@@ -3,21 +3,34 @@ package mail
 import (
 	"context"
 
-	"github.com/onipixel/oniworks/framework/mail"
+	onimail "github.com/onipixel/oniworks/framework/mail"
 )
 
-// {{.Name}}Mail sends the "{{.Name}}" email.
+// {{.Name}}Mail sends the {{.Name}} email.
+// Usage:
+//
+//	m := &mail.{{.Name}}Mail{To: user.Email, Name: user.Name}
+//	if err := m.Send(ctx, mailer); err != nil {
+//	    log.Println("mail failed:", err)
+//	}
 type {{.Name}}Mail struct {
-	To      string
-	Subject string
-	// Add mail-specific data here
+	To   string // recipient email address
+	Name string // recipient display name (available in template as .Name)
+	// Add any additional data your template needs:
+	// URL string
 }
 
-// Send delivers the email via the provided Mailer.
-func (m *{{.Name}}Mail) Send(ctx context.Context, mailer *mail.Mailer) error {
+// Subject returns the email subject line.
+func (m *{{.Name}}Mail) Subject() string {
+	return "{{.Name}}"
+}
+
+// Send delivers the email using the provided mailer.
+// The template is loaded from resources/views/emails/{{.NameSnake}}.html
+func (m *{{.Name}}Mail) Send(ctx context.Context, mailer *onimail.Mailer) error {
 	return mailer.NewMessage(ctx).
 		To(m.To).
-		Subject(m.Subject).
+		Subject(m.Subject()).
 		View("{{.NameSnake}}.html", m).
 		Send()
 }

@@ -3,21 +3,35 @@ package jobs
 import (
 	"context"
 	"log/slog"
+
+	"github.com/onipixel/oniworks/framework/queue"
 )
 
-// {{.Name}}Job processes {{.Name}} tasks from the queue.
+// {{.Name}}Job is a background job. Dispatch it from a handler:
+//
+//	manager.Dispatch(ctx, "default", &jobs.{{.Name}}Job{UserID: 42}, 0)
 type {{.Name}}Job struct {
-	// Add job payload fields here
-	// ID int64 `json:"id"`
+	// Define the job's payload fields. These are JSON-serialised to the queue.
+	UserID int64  `json:"user_id"`
+	// Add more fields as needed:
+	// Email  string `json:"email"`
 }
 
-func init() {
-	// queue.Register("jobs.{{.Name}}Job", func() queue.Job { return &{{.Name}}Job{} })
-}
-
-// Handle executes the job. Return an error to trigger retry.
+// Handle executes the job. Returning an error triggers an automatic retry
+// with exponential backoff up to the configured MaxAttempts.
 func (j *{{.Name}}Job) Handle(ctx context.Context) error {
-	slog.Info("{{.Name}}Job: processing")
-	// TODO: implement job logic
+	slog.Info("{{.Name}}Job: running", "user_id", j.UserID)
+
+	// TODO: implement job logic here
+	// Example: send an email, process a file, update a record, etc.
+
 	return nil
+}
+
+// Register this job type so the queue worker can reconstruct it from JSON.
+// Call this once from your application bootstrap (e.g. a service provider).
+func Register{{.Name}}Job() {
+	queue.Register("jobs.{{.Name}}Job", func() queue.Job {
+		return &{{.Name}}Job{}
+	})
 }

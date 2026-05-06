@@ -144,6 +144,45 @@ user, err := guard.UserFromSession(ctx, sess)
 guard.Logout(sess)
 ```
 
+## Built-in Auth Middleware
+
+Use the pre-built middleware instead of writing your own:
+
+```go
+import "github.com/onipixel/oniworks/framework/middleware"
+
+// Session middleware — load session for every request
+app.Use(middleware.SessionMiddleware(sessions))
+
+// Protect routes with session auth (redirects HTML, returns 401 for API)
+r.Group("/dashboard", func(g *routing.Group) {
+    g.Get("/", dashboardHandler)
+}, middleware.Auth(guard, sessions))
+
+// Protect routes with JWT bearer token
+r.Group("/api/v1", func(g *routing.Group) {
+    g.Get("/profile", profileHandler)
+}, middleware.AuthJWT(guard))
+
+// Read the current user inside a protected handler
+user := middleware.CurrentUser(c)       // auth.User interface
+sess := middleware.CurrentSession(c)    // *session.Session
+```
+
+## CSRF Protection
+
+```go
+app.Use(middleware.SessionMiddleware(sessions))
+app.Use(middleware.CSRF())
+
+// In your template handler
+token := middleware.CSRFToken(c)
+```
+
+```html
+<input type="hidden" name="_token" value="{{ .CSRFToken }}">
+```
+
 ## Errors
 
 | Error | Meaning |
