@@ -407,18 +407,16 @@ func (b *Builder) Insert(dest any) error {
 }
 
 // InsertMap inserts a row from a plain map[string]any. Column order is sorted
-// for determinism. Hooks are not called. If "created_at" or "updated_at" are
-// present in the map with a zero time.Time value they are set to time.Now(),
-// matching the auto-timestamp behaviour of Insert.
+// for determinism. Hooks are not called. "created_at" and "updated_at" are
+// injected as UTC RFC3339 strings when not already present in the map.
 func (b *Builder) InsertMap(data map[string]any) error {
 	defer b.release()
-	now := time.Now()
-	for _, col := range []string{"created_at", "updated_at"} {
-		if v, ok := data[col]; ok {
-			if t, isTime := v.(time.Time); isTime && t.IsZero() {
-				data[col] = now
-			}
-		}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, ok := data["created_at"]; !ok {
+		data["created_at"] = now
+	}
+	if _, ok := data["updated_at"]; !ok {
+		data["updated_at"] = now
 	}
 	cols := make([]string, 0, len(data))
 	for k := range data {
