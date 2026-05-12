@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Map is a convenience alias used in Insert/Update calls.
@@ -406,9 +407,19 @@ func (b *Builder) Insert(dest any) error {
 }
 
 // InsertMap inserts a row from a plain map[string]any. Column order is sorted
-// for determinism. Hooks are not called.
+// for determinism. Hooks are not called. If "created_at" or "updated_at" are
+// present in the map with a zero time.Time value they are set to time.Now(),
+// matching the auto-timestamp behaviour of Insert.
 func (b *Builder) InsertMap(data map[string]any) error {
 	defer b.release()
+	now := time.Now()
+	for _, col := range []string{"created_at", "updated_at"} {
+		if v, ok := data[col]; ok {
+			if t, isTime := v.(time.Time); isTime && t.IsZero() {
+				data[col] = now
+			}
+		}
+	}
 	cols := make([]string, 0, len(data))
 	for k := range data {
 		cols = append(cols, k)
