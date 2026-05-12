@@ -174,9 +174,11 @@ func (db *DB) Table(table string) *Builder {
 	return b
 }
 
-// Raw returns a Builder for a raw SQL query.
+// Raw returns a Builder for a raw SQL query. Terminal methods Scan, All, and
+// Count all work on Raw builders.
 //
 //	db.Raw("SELECT COUNT(*) FROM users WHERE active = ?", true).Scan(&count)
+//	db.Raw("SELECT * FROM users WHERE role = ?", "admin").All(&users)
 func (db *DB) Raw(sql string, args ...any) *Builder {
 	b := builderPool.Get().(*Builder)
 	b.reset()

@@ -43,18 +43,34 @@ err := db.Table("posts").
     Offset(0).
     All(&posts)
 
-// Raw query
+// Raw scalar
 var count int
 err := db.Raw("SELECT COUNT(*) FROM users WHERE active = ?", true).
     Scan(&count)
+
+// Raw multi-row (works with structs or []map[string]any)
+var admins []User
+err = db.Raw("SELECT * FROM users WHERE role = ?", "admin").All(&admins)
 ```
 
 ## Insert
 
+`Insert` accepts a struct pointer and calls `BeforeCreate`/`AfterCreate` hooks. The auto-increment PK is set on the struct after a successful insert.
+
 ```go
 user := &User{Email: "alice@example.com", Name: "Alice"}
 err := db.Table("users").Insert(user)
-// user.ID is set after insert (for auto-increment PKs)
+// user.ID is populated after insert
+```
+
+Use `InsertMap` when you have a plain map rather than a model struct. Hooks are not called.
+
+```go
+err := db.Table("events").InsertMap(database.Map{
+    "name":       "signup",
+    "user_id":    42,
+    "created_at": time.Now(),
+})
 ```
 
 ## Update

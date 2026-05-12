@@ -25,6 +25,7 @@ type compiledRoute struct {
 }
 
 // parsePattern splits a URL pattern into typed segments.
+// Both ":name" and "{name}" are accepted as named parameters.
 // "/users/:id/posts/*rest" → [{lit:"users"}, {param:"id"}, {lit:"posts"}, {wild:true,param:"rest"}]
 func parsePattern(pattern string) []segment {
 	parts := splitPath(pattern)
@@ -42,6 +43,8 @@ func parsePattern(pattern string) []segment {
 			break // wildcard eats the rest
 		case strings.HasPrefix(p, ":"):
 			segs = append(segs, segment{param: p[1:]})
+		case strings.HasPrefix(p, "{") && strings.HasSuffix(p, "}"):
+			segs = append(segs, segment{param: p[1 : len(p)-1]})
 		default:
 			segs = append(segs, segment{lit: p})
 		}

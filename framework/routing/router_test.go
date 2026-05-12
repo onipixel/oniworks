@@ -157,6 +157,24 @@ func TestHTTPMethods(t *testing.T) {
 	}
 }
 
+func TestBraceParamRoute(t *testing.T) {
+	r := routing.New()
+	r.Get("/files/{filename}", func(c *onihttp.Context) error {
+		return c.JSON(200, map[string]any{"file": c.Param("filename")})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/files/report.pdf", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "report.pdf") {
+		t.Errorf("body should contain filename: %s", w.Body.String())
+	}
+}
+
 func TestMultipleParams(t *testing.T) {
 	r := routing.New()
 	r.Get("/users/:userID/posts/:postID", func(c *onihttp.Context) error {

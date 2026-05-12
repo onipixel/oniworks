@@ -26,6 +26,14 @@ r.Get("/users/:username", func(c *onihttp.Context) error {
 })
 ```
 
+Brace-style `{name}` is also accepted and behaves identically:
+
+```go
+r.Get("/files/{filename}", func(c *onihttp.Context) error {
+    return c.JSON(200, map[string]any{"file": c.Param("filename")})
+})
+```
+
 ## Route Groups
 
 Groups share a prefix and optionally middleware.

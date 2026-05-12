@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -360,8 +361,12 @@ func (b *Builder) Pluck(col string, dest any) error {
 }
 
 // Insert inserts dest (a model pointer) and calls BeforeCreate / AfterCreate hooks.
+// dest must be a struct pointer; for map[string]any use InsertMap instead.
 func (b *Builder) Insert(dest any) error {
 	defer b.release()
+	if _, ok := dest.(map[string]any); ok {
+		return fmt.Errorf("database: Insert: maps are not supported; use InsertMap instead")
+	}
 	if err := callHook(dest, hookBeforeCreate, b.db); err != nil {
 		return err
 	}
@@ -398,6 +403,25 @@ func (b *Builder) Insert(dest any) error {
 	}
 
 	return callHook(dest, hookAfterCreate, b.db)
+}
+
+// InsertMap inserts a row from a plain map[string]any. Column order is sorted
+// for determinism. Hooks are not called.
+func (b *Builder) InsertMap(data map[string]any) error {
+	defer b.release()
+	cols := make([]string, 0, len(data))
+	for k := range data {
+		cols = append(cols, k)
+	}
+	sort.Strings(cols)
+	vals := make([]any, len(cols))
+	for i, k := range cols {
+		vals[i] = data[k]
+	}
+	query, args := b.buildInsert(cols, vals)
+	query, args = b.normalizePlaceholders(query, args...)
+	_, err := b.db.execContext(b.ctx, query, args...)
+	return err
 }
 
 // Save updates all fields of dest, calling BeforeSave / AfterSave hooks.
