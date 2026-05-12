@@ -18,10 +18,18 @@ import (
 	"time"
 
 	gomail "github.com/wneessen/go-mail"
+
+	"github.com/onipixel/oniworks/framework/config"
 )
 
-// Config holds SMTP connection settings.
+// Transport is the delivery backend used by a Mailer.
+type Transport interface {
+	Send(msg *Message) error
+}
+
+// Config holds mail settings.
 type Config struct {
+	Driver     string // "smtp" | "log"  (default: "smtp")
 	Host       string
 	Port       int
 	Username   string
@@ -32,12 +40,13 @@ type Config struct {
 	Timeout    time.Duration
 }
 
-// Mailer manages SMTP connections and message construction.
+// Mailer manages message construction and delivery.
 type Mailer struct {
-	cfg     Config
-	tmpls   *template.Template
-	tmplMu  sync.RWMutex
-	logger  *slog.Logger
+	cfg       Config
+	transport Transport
+	tmpls     *template.Template
+	tmplMu    sync.RWMutex
+	logger    *slog.Logger
 }
 
 // New creates a Mailer. Templates are loaded lazily via LoadTemplates.
@@ -52,7 +61,123 @@ func New(cfg Config, logger ...*slog.Logger) *Mailer {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 15 * time.Second
 	}
-	return &Mailer{cfg: cfg, logger: log}
+	if cfg.Driver == "" {
+		cfg.Driver = "smtp"
+	}
+
+	var t Transport
+	switch strings.ToLower(cfg.Driver) {
+	case "log":
+		t = &LogTransport{path: "storage/logs/mail.log"}
+	default:
+		t = &SMTPTransport{cfg: cfg}
+	}
+
+	return &Mailer{cfg: cfg, transport: t, logger: log}
+}
+
+// NewFromConfig creates a Mailer from oni.Config, reading all mail.* keys.
+func NewFromConfig(cfg *config.Config, logger ...*slog.Logger) *Mailer {
+	return New(Config{
+		Driver:     cfg.String("mail.driver", "smtp"),
+		Host:       cfg.String("mail.host", "localhost"),
+		Port:       cfg.Int("mail.port", 1025),
+		Username:   cfg.String("mail.username", ""),
+		Password:   cfg.String("mail.password", ""),
+		FromAddr:   cfg.String("mail.from", "noreply@app.com"),
+		FromName:   cfg.String("mail.from_name", "App"),
+		Encryption: cfg.String("mail.encryption", "none"),
+	}, logger...)
+}
+
+// ─────────────────────────── Transports ──────────────────────────
+
+// SMTPTransport delivers via SMTP using go-mail.
+type SMTPTransport struct{ cfg Config }
+
+func (s *SMTPTransport) Send(msg *Message) error {
+	gm := gomail.NewMsg()
+
+	from := msg.from
+	if from == "" {
+		from = s.cfg.FromAddr
+	}
+	if err := gm.FromFormat(s.cfg.FromName, from); err != nil {
+		return fmt.Errorf("mail: set from: %w", err)
+	}
+	if err := gm.To(msg.to...); err != nil {
+		return fmt.Errorf("mail: set to: %w", err)
+	}
+	if len(msg.cc) > 0 {
+		if err := gm.Cc(msg.cc...); err != nil {
+			return fmt.Errorf("mail: set cc: %w", err)
+		}
+	}
+	if len(msg.bcc) > 0 {
+		if err := gm.Bcc(msg.bcc...); err != nil {
+			return fmt.Errorf("mail: set bcc: %w", err)
+		}
+	}
+	gm.Subject(msg.subject)
+
+	if msg.html != "" && msg.text != "" {
+		gm.SetBodyString(gomail.TypeTextPlain, msg.text)
+		gm.AddAlternativeString(gomail.TypeTextHTML, msg.html)
+	} else if msg.html != "" {
+		gm.SetBodyString(gomail.TypeTextHTML, msg.html)
+	} else if msg.text != "" {
+		gm.SetBodyString(gomail.TypeTextPlain, msg.text)
+	}
+
+	for _, a := range msg.attachments {
+		ct := mime.TypeByExtension(filepath.Ext(a.name))
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		if a.inline {
+			gm.EmbedReader(a.name, a.reader, gomail.WithFileEncoding(gomail.EncodingB64))
+		} else {
+			gm.AttachReader(a.name, a.reader, gomail.WithFileEncoding(gomail.EncodingB64))
+		}
+		_ = ct
+	}
+	for k, v := range msg.headers {
+		gm.SetGenHeader(gomail.Header(k), v)
+	}
+
+	client, err := dialSMTP(s.cfg)
+	if err != nil {
+		return err
+	}
+	if err := client.DialAndSend(gm); err != nil {
+		return fmt.Errorf("mail: send: %w", err)
+	}
+	return nil
+}
+
+// LogTransport writes emails to a log file instead of sending them.
+type LogTransport struct{ path string }
+
+func (l *LogTransport) Send(msg *Message) error {
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
+		return fmt.Errorf("mail: log transport mkdir: %w", err)
+	}
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("mail: log transport open: %w", err)
+	}
+	defer f.Close()
+
+	fmt.Fprintf(f, "-------------------- %s --------------------\n", time.Now().Format(time.RFC1123))
+	fmt.Fprintf(f, "To:      %s\n", strings.Join(msg.to, ", "))
+	fmt.Fprintf(f, "Subject: %s\n", msg.subject)
+	if msg.html != "" {
+		fmt.Fprintf(f, "Body (HTML):\n%s\n", msg.html)
+	} else {
+		fmt.Fprintf(f, "Body:\n%s\n", msg.text)
+	}
+	fmt.Fprintln(f)
+	return nil
 }
 
 // LoadTemplates parses all *.html files in dir into the template set.
@@ -185,77 +310,13 @@ func (m *Message) Header(key, value string) *Message {
 	return m
 }
 
-// Send delivers the message via SMTP.
+// Send delivers the message via the configured transport.
 func (m *Message) Send() error {
 	if len(m.to) == 0 {
 		return fmt.Errorf("mail: no recipients")
 	}
-
-	msg := gomail.NewMsg()
-
-	// From
-	from := m.from
-	if from == "" {
-		from = m.mailer.cfg.FromAddr
-	}
-	fromDisplay := m.mailer.cfg.FromName
-	if err := msg.FromFormat(fromDisplay, from); err != nil {
-		return fmt.Errorf("mail: set from: %w", err)
-	}
-
-	// To / CC / BCC
-	if err := msg.To(m.to...); err != nil {
-		return fmt.Errorf("mail: set to: %w", err)
-	}
-	if len(m.cc) > 0 {
-		if err := msg.Cc(m.cc...); err != nil {
-			return fmt.Errorf("mail: set cc: %w", err)
-		}
-	}
-	if len(m.bcc) > 0 {
-		if err := msg.Bcc(m.bcc...); err != nil {
-			return fmt.Errorf("mail: set bcc: %w", err)
-		}
-	}
-
-	msg.Subject(m.subject)
-
-	// Body
-	if m.html != "" && m.text != "" {
-		msg.SetBodyString(gomail.TypeTextPlain, m.text)
-		msg.AddAlternativeString(gomail.TypeTextHTML, m.html)
-	} else if m.html != "" {
-		msg.SetBodyString(gomail.TypeTextHTML, m.html)
-	} else if m.text != "" {
-		msg.SetBodyString(gomail.TypeTextPlain, m.text)
-	}
-
-	// Attachments
-	for _, a := range m.attachments {
-		ct := mime.TypeByExtension(filepath.Ext(a.name))
-		if ct == "" {
-			ct = "application/octet-stream"
-		}
-		if a.inline {
-			msg.EmbedReader(a.name, a.reader, gomail.WithFileEncoding(gomail.EncodingB64))
-		} else {
-			msg.AttachReader(a.name, a.reader, gomail.WithFileEncoding(gomail.EncodingB64))
-		}
-		_ = ct
-	}
-
-	// Headers
-	for k, v := range m.headers {
-		msg.SetGenHeader(gomail.Header(k), v)
-	}
-
-	// Dial + send
-	client, err := m.mailer.dialClient()
-	if err != nil {
+	if err := m.mailer.transport.Send(m); err != nil {
 		return err
-	}
-	if err := client.DialAndSend(msg); err != nil {
-		return fmt.Errorf("mail: send: %w", err)
 	}
 	m.mailer.logger.Debug("mail: sent", "to", strings.Join(m.to, ", "), "subject", m.subject)
 	return nil
@@ -268,8 +329,7 @@ func (m *Mailer) NewMessage(ctx context.Context) *Message {
 	return &Message{mailer: m, ctx: ctx}
 }
 
-func (m *Mailer) dialClient() (*gomail.Client, error) {
-	cfg := m.cfg
+func dialSMTP(cfg Config) (*gomail.Client, error) {
 	opts := []gomail.Option{
 		gomail.WithPort(cfg.Port),
 		gomail.WithSMTPAuth(gomail.SMTPAuthPlain),
