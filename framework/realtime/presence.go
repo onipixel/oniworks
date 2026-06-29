@@ -1,6 +1,8 @@
 package realtime
 
 import (
+	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +18,34 @@ type PresenceInfo struct {
 	UserID int64          `json:"user_id"`
 	ConnID string         `json:"conn_id"`
 	Meta   map[string]any `json:"meta,omitempty"`
+}
+
+func init() {
+	// Register so PresenceInfo survives gob encoding over the gossip transport
+	// and can be decoded back into a concrete value on remote nodes.
+	gob.Register(PresenceInfo{})
+}
+
+// toPresenceInfo coerces a stored value into PresenceInfo. Entries written
+// locally are concrete PresenceInfo; entries arriving from another node via the
+// Redis adapter (JSON) decode as map[string]any. Handling both means remote
+// members are counted instead of silently dropped.
+func toPresenceInfo(v any) (PresenceInfo, bool) {
+	switch t := v.(type) {
+	case PresenceInfo:
+		return t, true
+	case map[string]any:
+		b, err := json.Marshal(t)
+		if err != nil {
+			return PresenceInfo{}, false
+		}
+		var pi PresenceInfo
+		if err := json.Unmarshal(b, &pi); err != nil {
+			return PresenceInfo{}, false
+		}
+		return pi, true
+	}
+	return PresenceInfo{}, false
 }
 
 // PresenceManager manages who is "online" in each channel.
@@ -51,7 +81,7 @@ func (pm *PresenceManager) Members(channel string) []PresenceInfo {
 	members := make([]PresenceInfo, 0, len(keys))
 	for _, k := range keys {
 		if v, ok := pm.mem.Get(k); ok {
-			if info, ok := v.(PresenceInfo); ok {
+			if info, ok := toPresenceInfo(v); ok {
 				members = append(members, info)
 			}
 		}

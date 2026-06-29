@@ -346,6 +346,31 @@ func (h *Hub) dispatch(c *Conn, msg []byte) {
 			h.replayMissed(c, e.ID)
 		}
 		return
+	case EventTypeSubscribe:
+		// Explicit subscribe. If the channel has a registered handler, run it
+		// FIRST so its authorization logic applies — the handler may reject the
+		// subscription (e.g. "you can't subscribe to another user's channel").
+		// Only on success does the framework subscribe the connection. Channels
+		// with no handler are open and the connection subscribes directly.
+		if e.Channel != "" {
+			if handler, params := h.router.Match(e.Channel); handler != nil {
+				e.Params = params
+				if err := handler(c, &e); err != nil {
+					c.sendError(err.Error())
+					return
+				}
+			}
+			c.Subscribe(e.Channel)
+			h.updatePresence(c, e.Channel, true)
+			c.Send(&Event{Type: EventTypeAck, Channel: e.Channel, Ts: time.Now().Unix()})
+		}
+		return
+	case EventTypeUnsubscribe:
+		if e.Channel != "" {
+			c.Unsubscribe(e.Channel)
+			h.updatePresence(c, e.Channel, false)
+		}
+		return
 	}
 
 	// Route to channel handler

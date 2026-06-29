@@ -162,6 +162,11 @@ func (db *DB) SetLogLevel(level slog.Level) { db.logLevel = level }
 // SQLDB exposes the underlying *sql.DB for advanced use (migrations, raw exec, etc.).
 func (db *DB) SQLDB() *sql.DB { return db.sqlDB }
 
+// QuoteIdentifier quotes a SQL identifier (table or column) for the active
+// dialect, escaping any embedded quote characters. Use it when building a raw
+// clause fragment that must include a caller-supplied identifier safely.
+func (db *DB) QuoteIdentifier(s string) string { return db.grammar.QuoteIdent(s) }
+
 // Table returns a new Builder for the given table name.
 //
 //	db.Table("users").Where("active = ?", true).All(&users)

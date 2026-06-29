@@ -219,16 +219,10 @@ func (v *Validator) applyRule(rule string, val any, param string) string {
 	}
 
 	str := fmt.Sprintf("%v", val)
-	var isZero bool
-	if val == nil {
-		isZero = true
-	} else if t := reflect.TypeOf(val); t != nil {
-		isZero = reflect.DeepEqual(val, reflect.Zero(t).Interface())
-	}
 
 	switch rule {
 	case "required":
-		if val == nil || str == "" || isZero {
+		if isEmptyForRequired(val) {
 			return "is required"
 		}
 	case "email":
@@ -263,6 +257,8 @@ func (v *Validator) applyRule(rule string, val any, param string) string {
 			if i < float64(n) {
 				return fmt.Sprintf("must be at least %d", n)
 			}
+		} else {
+			return fmt.Sprintf("min rule cannot be applied to %T", val)
 		}
 	case "max":
 		n, _ := strconv.Atoi(param)
@@ -274,6 +270,8 @@ func (v *Validator) applyRule(rule string, val any, param string) string {
 			if i > float64(n) {
 				return fmt.Sprintf("must be at most %d", n)
 			}
+		} else {
+			return fmt.Sprintf("max rule cannot be applied to %T", val)
 		}
 	case "len":
 		n, _ := strconv.Atoi(param)
@@ -326,6 +324,26 @@ func (v *Validator) applyRule(rule string, val any, param string) string {
 		}
 	}
 	return ""
+}
+
+// isEmptyForRequired reports whether val should be treated as "missing" by the
+// required rule. Empty strings, empty slices/maps/arrays, and nil pointers are
+// missing. A zero number or false bool is NOT treated as missing — those are
+// legitimate values and presence cannot be distinguished from a zero value on a
+// non-pointer field (use a pointer field if you need to require presence).
+func isEmptyForRequired(val any) bool {
+	if val == nil {
+		return true
+	}
+	rv := reflect.ValueOf(val)
+	switch rv.Kind() {
+	case reflect.String, reflect.Slice, reflect.Map, reflect.Array:
+		return rv.Len() == 0
+	case reflect.Ptr, reflect.Interface:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }
 
 func toFloat(v any) (float64, error) {

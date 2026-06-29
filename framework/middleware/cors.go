@@ -60,13 +60,29 @@ func CORS(cfg ...CORSConfig) onihttp.MiddlewareFunc {
 				return next(ctx)
 			}
 
-			allowed := isOriginAllowed(origin, c.AllowOrigins)
+			allowed, explicit := matchOrigin(origin, c.AllowOrigins)
 			h := ctx.Response.Header()
 
 			if allowed {
-				h.Set("Access-Control-Allow-Origin", origin)
-				if c.AllowCredentials {
-					h.Set("Access-Control-Allow-Credentials", "true")
+				if explicit {
+					// Origin matched an explicit allow-list entry: reflect it,
+					// add Vary so caches don't serve it to another origin, and
+					// (only here) honor credentials.
+					h.Set("Access-Control-Allow-Origin", origin)
+					h.Add("Vary", "Origin")
+					if c.AllowCredentials {
+						h.Set("Access-Control-Allow-Credentials", "true")
+					}
+				} else if c.AllowCredentials {
+					// Wildcard ("*") + credentials is forbidden by the spec and a
+					// classic misconfiguration (any site could read credentialed
+					// responses). Reflect the origin so simple cross-origin still
+					// works, but never send Allow-Credentials for a wildcard.
+					h.Set("Access-Control-Allow-Origin", origin)
+					h.Add("Vary", "Origin")
+				} else {
+					// Wildcard, no credentials: a literal "*" is cacheable.
+					h.Set("Access-Control-Allow-Origin", "*")
 				}
 				if exposeHeaders != "" {
 					h.Set("Access-Control-Expose-Headers", exposeHeaders)
@@ -91,11 +107,19 @@ func CORS(cfg ...CORSConfig) onihttp.MiddlewareFunc {
 	}
 }
 
-func isOriginAllowed(origin string, allowed []string) bool {
+// matchOrigin reports whether origin is allowed and whether it matched an
+// explicit allow-list entry (as opposed to a "*" wildcard). The distinction
+// matters: credentials may only be granted to an explicitly allowed origin.
+func matchOrigin(origin string, allowed []string) (ok bool, explicit bool) {
+	wildcard := false
 	for _, a := range allowed {
-		if a == "*" || strings.EqualFold(a, origin) {
-			return true
+		if a == "*" {
+			wildcard = true
+			continue
+		}
+		if strings.EqualFold(a, origin) {
+			return true, true
 		}
 	}
-	return false
+	return wildcard, false
 }

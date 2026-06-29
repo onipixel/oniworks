@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -130,8 +131,15 @@ func (s *S3) Exists(ctx context.Context, path string) (bool, error) {
 		Key:    aws.String(path),
 	})
 	if err != nil {
-		// S3 returns a NoSuchKey-shaped error on 404
-		return false, nil
+		// Only a genuine 404 means "does not exist". Network/auth/throttle errors
+		// must be surfaced, not silently reported as not-found (which would mask
+		// failures and can cause data loss in overwrite/move logic).
+		var nf *types.NotFound
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nf) || errors.As(err, &nsk) {
+			return false, nil
+		}
+		return false, fmt.Errorf("storage/s3: head %q: %w", path, err)
 	}
 	return true, nil
 }

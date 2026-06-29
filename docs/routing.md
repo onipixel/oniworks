@@ -51,7 +51,7 @@ r.Group("/api/v1", func(g *routing.Group) {
 Apply middleware to a single handler by wrapping it:
 
 ```go
-authMW := middleware.Auth(guard)
+authMW := middleware.Auth(guard, sessions) // Auth needs the Guard and the session Manager
 
 r.Get("/dashboard", authMW(DashboardHandler))
 ```

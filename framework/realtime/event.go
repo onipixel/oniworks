@@ -81,11 +81,13 @@ func (e *Event) Encode() ([]byte, error) {
 
 // System event types (reserved — prefixed with "oni:")
 const (
-	EventTypeConnect    = "oni:connect"
-	EventTypeDisconnect = "oni:disconnect"
-	EventTypeError      = "oni:error"
-	EventTypePing       = "oni:ping"
-	EventTypePong       = "oni:pong"
-	EventTypeResume     = "oni:resume"
-	EventTypeAck        = "oni:ack"
+	EventTypeConnect     = "oni:connect"
+	EventTypeDisconnect  = "oni:disconnect"
+	EventTypeError       = "oni:error"
+	EventTypePing        = "oni:ping"
+	EventTypePong        = "oni:pong"
+	EventTypeResume      = "oni:resume"
+	EventTypeAck         = "oni:ack"
+	EventTypeSubscribe   = "oni:subscribe"
+	EventTypeUnsubscribe = "oni:unsubscribe"
 )

@@ -4,6 +4,50 @@ All notable changes to OniWorks are documented here.
 
 ---
 
+## Unreleased — Hardening pass (toward v1.2 / 1.0)
+
+A full-framework security, correctness, and polish sweep. See `ROADMAP.md` and
+`HARDENING.md` for the milestone plan. **24/28 modules now tested** (was 12/28),
+with live-PostgreSQL integration tests, a scaffold-and-build test, and CI
+(`.github/workflows/ci.yml`) running the race detector + a Postgres service.
+
+### ⚠️ Breaking changes
+- **`admin`** — the panel now **fails closed**: every route returns 403 until an authorizer is configured via `admin.New(db, admin.WithAuth(fn))`.
+- **`auth`** — JWT operations require a signing secret of **≥32 bytes** (`ErrJWTNotConfigured` otherwise); the parser enforces `HS256` + a required `exp`.
+- **`http`** — `Request.IP()` no longer trusts `X-Forwarded-For`/`X-Real-IP` unless the peer is a configured trusted proxy (`http.SetTrustedProxies`).
+- **`secrets`** — APP_KEY derivation changed: `base64:` keys are now decoded (not re-hashed) and passphrases use scrypt instead of a single SHA-256. **Existing encrypted data must be re-encrypted.**
+- **`seeder`** — `Seeder.Run` / `Runner.Run` now take `*database.DB` directly (the structural `seeder.DB` interface was removed).
+- **`memory`** — `ClockValue` fields are now exported.
+- **`database`** — `Select`/`OrderBy`/`GroupBy`/`Pluck` now accept only validated column references (for injection safety). Raw expressions such as `Select("DISTINCT posts.*")`, `Select("COUNT(*) AS n")`, or `OrderBy("RANDOM()")` must move to the new `SelectRaw`/`OrderByRaw`/`GroupByRaw` methods.
+
+### Security
+- **SQL injection** — `Select`/`OrderBy`/`GroupBy`/`Pluck` validate + quote every identifier (allow-list grammar); added `SelectRaw`/`OrderByRaw`/`GroupByRaw`; admin search allow-lists its column.
+- **Admin/metrics/health** — admin & `/metrics` require an authorizer (fail closed); `/metrics` collapses high-cardinality path labels; public `/health` redacts check messages (new guarded `DetailedHandler`); `errors.HandlerForEnv` enables debug only in dev.
+- **Gossip** — pre-shared-secret handshake + 8 MiB length-framed messages (was unauthenticated, unbounded).
+- **RBAC** — wildcard matching is segment-aware (`user*` no longer over-grants across boundaries).
+- **Storage** — local driver rejects path traversal via a `filepath.Rel` containment check (Windows volume/UNC included).
+- **Session/CSRF** — session ID rotates on login (fixation); constant-time CSRF compare; login runs a constant-time dummy bcrypt for unknown users (no enumeration).
+- **Backup/mail** — MySQL backup password moved off argv to `MYSQL_PWD`; `mail.NewFromConfig` defaults to TLS (was cleartext).
+
+### Concurrency & stability
+- **`http`** — `Context` mutex held by pointer (fixes the `go vet` lock-copy data race); `Timeout` middleware rewritten with `http.TimeoutHandler` semantics (no concurrent socket writes).
+- **`memory`** — pub/sub no longer panics on concurrent unsubscribe (send-on-closed); gossip uses one serialized writer per connection.
+- **`queue`/`scheduler`** — panicking jobs recover (retry/dead-letter) instead of killing the worker/process; scheduler skips self-overlapping runs.
+
+### Correctness
+- **`database`** — `Paginate` count honors soft-delete + GROUP BY and populates `Page.Items`; scanner handles `[]byte`/string → numeric/bool/time and errors instead of silently zeroing; soft-delete write path (`SoftDelete().Delete()` + `ForceDelete()`); eager-load relations resolve by field index (two relations to one table no longer collide).
+- **`migrations`** — `Migrate` runs the whole batch in one transaction (atomic rollback on Postgres).
+- **`validation`** — `required` accepts legitimate `0`/`false`; `min`/`max` error on unsupported types.
+- **`middleware`** — CORS never emits credentials for a wildcard origin and adds `Vary: Origin`; compress honors the level, gates on content type, and skips 204/already-encoded bodies.
+- **`routing`** — `405` + `Allow` for known paths under other methods; implicit `HEAD`→`GET` and auto-`OPTIONS`; multipart temp files cleaned up.
+- **`realtime`** — resume replays the full buffer when `last_event_id` aged out (no silent gaps); presence counts cross-node members; `oni:subscribe`/`oni:unsubscribe` so `channel().on()` receives broadcasts.
+
+### New
+- **`@oniworks/socket`** (`client/`) — the official TypeScript client: typed channels, auto-reconnect, resume, heartbeat, presence. (The README advertised it; it now exists.)
+- **`oni make:*`** generators work in scaffolded projects (stubs embedded via `//go:embed`); the scaffolded app wires `route:list`/`health` and returns honest errors for unwired commands.
+
+---
+
 ## v1.1.0 — 2026-05-06
 
 ### Security Fixes

@@ -161,7 +161,7 @@ func (m *Manager) process(p *Payload) {
 	ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)
 	defer cancel()
 
-	if err := job.Handle(ctx); err != nil {
+	if err := safeHandle(ctx, job); err != nil {
 		m.logger.Warn("queue: job failed", "id", p.ID, "class", p.Class, "attempt", p.Attempts, "error", err)
 
 		if p.Attempts >= p.MaxAttempts {
@@ -177,6 +177,19 @@ func (m *Manager) process(p *Payload) {
 	}
 
 	m.logger.Debug("queue: job succeeded", "id", p.ID, "class", p.Class)
+}
+
+// safeHandle runs a job's Handle, converting a panic into an error so a
+// misbehaving job is retried/dead-lettered like any other failure instead of
+// unwinding and killing the worker goroutine (which would drop the job and
+// shrink the worker pool).
+func safeHandle(ctx context.Context, job Job) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("queue: job panicked: %v", r)
+		}
+	}()
+	return job.Handle(ctx)
 }
 
 func newID() string {

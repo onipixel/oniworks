@@ -73,35 +73,24 @@ export async function renderNotifications(root: HTMLElement) {
 }
 
 // ─── Realtime badge ───────────────────────────────────────────────
+//
+// Uses the framework's OniSocket client, which handles subscription,
+// auto-reconnect, heartbeat, and resume — no hand-rolled WebSocket plumbing.
 
-let ws: WebSocket | null = null
+import { OniSocket } from '@oniworks/socket'
+
+let socket: OniSocket | null = null
 
 export function initRealtimeNotifications(
   userID: number,
   token: string,
   opts: { onBadge: () => void }
 ) {
-  if (ws) return
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`)
-
-  ws.addEventListener('open', () => {
-    ws!.send(JSON.stringify({ type: 'subscribe', channel: `notify.${userID}` }))
-  })
-
-  ws.addEventListener('message', (e) => {
-    try {
-      const event = JSON.parse(e.data as string)
-      if (event.type === 'broadcast' && event.channel?.startsWith('notify.')) {
-        opts.onBadge()
-      }
-    } catch { /* ignore */ }
-  })
-
-  ws.addEventListener('close', () => {
-    ws = null
-    setTimeout(() => initRealtimeNotifications(userID, token, opts), 3000)
-  })
+  if (socket) return
+  socket = new OniSocket('/ws', { token })
+  // The server's notify.{user_id} channel authorizes that the connecting user
+  // owns this channel before subscribing.
+  socket.channel(`notify.${userID}`).on('broadcast', () => opts.onBadge())
 }
 
 export function updateNotifBadge(appEl: HTMLElement, show: boolean) {

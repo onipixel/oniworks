@@ -19,6 +19,41 @@ type subscriber struct {
 	topic   string
 	handler func(topic string, payload any)
 	buf     chan pubMsg
+
+	// mu guards buf against concurrent deliver/close. closed makes cancellation
+	// idempotent and prevents a send-on-closed-channel panic when a publish
+	// races with an unsubscribe.
+	mu     sync.Mutex
+	closed bool
+}
+
+// deliver performs a non-blocking send to the subscriber's buffer. It is a
+// no-op once the subscriber has been closed, so it can never panic by sending
+// on a closed channel.
+func (s *subscriber) deliver(msg pubMsg) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	select {
+	case s.buf <- msg:
+	default:
+		// Drop message for slow subscribers rather than blocking the publisher.
+		// This is by design for high-throughput systems.
+	}
+}
+
+// close idempotently closes the subscriber's buffer, stopping its delivery
+// goroutine. Safe to call multiple times.
+func (s *subscriber) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	close(s.buf)
 }
 
 type pubMsg struct {
@@ -43,12 +78,7 @@ func (ps *PubSub) publish(topic string, payload any) {
 
 	msg := pubMsg{topic: topic, payload: payload}
 	for _, s := range subs {
-		select {
-		case s.buf <- msg:
-		default:
-			// Drop message for slow subscribers rather than blocking the publisher.
-			// This is by design for high-throughput systems.
-		}
+		s.deliver(msg)
 	}
 }
 
@@ -79,7 +109,7 @@ func (ps *PubSub) subscribe(topic string, handler func(topic string, payload any
 		ps.mu.Lock()
 		delete(ps.subscribers, id)
 		ps.mu.Unlock()
-		close(sub.buf)
+		sub.close()
 	}
 }
 

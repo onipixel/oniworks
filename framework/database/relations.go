@@ -281,17 +281,15 @@ func buildPKMap(rows interface{ Next() bool; Columns() ([]string, error); Scan(.
 }
 
 func assignHasMany(rv reflect.Value, isSlice bool, info *structInfo, rel relationDef, related map[any][]reflect.Value) {
-	relFieldIdx, _ := reflect.TypeOf(reflect.New(rv.Type().Elem()).Interface()).Elem().FieldByName(getRelFieldName(info, rel))
-	_ = relFieldIdx
-
 	for _, elem := range sliceOrOne(rv, isSlice) {
 		pk := elem.FieldByIndex(info.pkIndex).Interface()
 		rows, ok := related[pk]
 		if !ok {
 			continue
 		}
-		// Find the relation field on the struct by field index
-		relField := elem.FieldByName(getRelFieldNameFromRel(info, rel))
+		// Use the relation's own field index — not a (table,kind) lookup, which
+		// collides when a model has two relations to the same table.
+		relField := elem.FieldByIndex(rel.fieldIndex)
 		if !relField.IsValid() || !relField.CanSet() {
 			continue
 		}
@@ -310,7 +308,7 @@ func assignBelongsTo(rv reflect.Value, isSlice bool, info *structInfo, rel relat
 		if !ok {
 			continue
 		}
-		relField := elem.FieldByName(getRelFieldNameFromRel(info, rel))
+		relField := elem.FieldByIndex(rel.fieldIndex)
 		if !relField.IsValid() || !relField.CanSet() {
 			continue
 		}
@@ -324,15 +322,3 @@ func assignBelongsTo(rv reflect.Value, isSlice bool, info *structInfo, rel relat
 	}
 }
 
-func getRelFieldName(info *structInfo, rel relationDef) string {
-	for name, r := range info.relations {
-		if r.table == rel.table && r.kind == rel.kind {
-			return name
-		}
-	}
-	return ""
-}
-
-func getRelFieldNameFromRel(info *structInfo, rel relationDef) string {
-	return getRelFieldName(info, rel)
-}

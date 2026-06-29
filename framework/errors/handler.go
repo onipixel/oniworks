@@ -15,10 +15,27 @@ import (
 	onihttp "github.com/onipixel/oniworks/framework/http"
 )
 
+// HandlerForEnv returns an error handler with debug mode enabled ONLY when env
+// names a development environment ("local", "dev", "development", "debug",
+// case-insensitive). Any other value — including the empty string — yields a
+// production handler that never leaks internals. Prefer this over Handler(true)
+// so a stray config value can't turn on stack-trace disclosure in production.
+func HandlerForEnv(env string) func(*onihttp.Context, error) {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "local", "dev", "development", "debug":
+		return Handler(true)
+	default:
+		return Handler(false)
+	}
+}
+
 // Handler returns a router-compatible error handler.
 // When debugMode is true and the error is not an HTTPError, it renders a
 // detailed HTML page for browser requests or a verbose JSON payload for API
 // requests. For HTTPError values (4xx / known 5xx) it always returns clean JSON.
+//
+// Enabling debug mode exposes stack traces, file paths, and raw error strings;
+// never enable it in production. Consider HandlerForEnv to wire this safely.
 func Handler(debugMode bool) func(*onihttp.Context, error) {
 	return func(c *onihttp.Context, err error) {
 		// Walk the chain looking for an HTTPError.

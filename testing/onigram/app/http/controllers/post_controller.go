@@ -34,7 +34,7 @@ func (ctrl *PostController) Feed(c *onihttp.Context) error {
 
 	posts := make([]models.Post, 0)
 	err := database.Table("posts").
-		Select("DISTINCT posts.*").
+		SelectRaw("DISTINCT posts.*").
 		LeftJoin("follows ON follows.following_id = posts.user_id").
 		Where("follows.follower_id = ? OR posts.user_id = ?", userID, userID).
 		OrderBy("posts.created_at DESC").
@@ -286,7 +286,7 @@ func enrichPosts(posts []models.Post, viewerID int64) {
 	}
 	var counts []likeCount
 	_ = database.Table("likes").
-		Select("post_id", "COUNT(*) AS count").
+		Select("post_id").SelectRaw("COUNT(*) AS count").
 		WhereIn("post_id", ids...).
 		GroupBy("post_id").
 		All(&counts)
@@ -303,7 +303,7 @@ func enrichPosts(posts []models.Post, viewerID int64) {
 	}
 	var cmtCounts []commentCount
 	_ = database.Table("comments").
-		Select("post_id", "COUNT(*) AS count").
+		Select("post_id").SelectRaw("COUNT(*) AS count").
 		WhereIn("post_id", ids...).
 		GroupBy("post_id").
 		All(&cmtCounts)

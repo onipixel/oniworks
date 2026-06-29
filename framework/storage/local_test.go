@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -184,5 +185,43 @@ func TestGetMissingFile(t *testing.T) {
 	}
 	if !os.IsNotExist(err) && !strings.Contains(err.Error(), "open") {
 		t.Logf("error type: %v", err)
+	}
+}
+
+// TestPathTraversalBlocked is the security regression: a caller-supplied key
+// must never read or write outside the storage root.
+func TestPathTraversalBlocked(t *testing.T) {
+	root := t.TempDir()
+	disk, err := storage.NewLocal(filepath.Join(root, "store"), "https://cdn.example.com")
+	if err != nil {
+		t.Fatalf("NewLocal: %v", err)
+	}
+	ctx := context.Background()
+
+	// Sentinel just outside the store root.
+	outside := filepath.Join(root, "secret.txt")
+	if err := os.WriteFile(outside, []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, key := range []string{
+		"../secret.txt",
+		"../../store/../secret.txt",
+		"docs/../../secret.txt",
+		`..\secret.txt`,
+		`..\..\secret.txt`,
+	} {
+		if r, err := disk.Get(ctx, key); err == nil {
+			b, _ := io.ReadAll(r)
+			r.Close()
+			if strings.Contains(string(b), "TOPSECRET") {
+				t.Fatalf("traversal %q escaped the root", key)
+			}
+		}
+		_ = disk.Put(ctx, key, strings.NewReader("overwrite"))
+	}
+
+	if got, _ := os.ReadFile(outside); string(got) != "TOPSECRET" {
+		t.Fatalf("a traversal write modified a file outside the root: %q", got)
 	}
 }

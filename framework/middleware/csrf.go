@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -65,25 +66,30 @@ func CSRFToken(c *onihttp.Context) string {
 	if tok, ok := sess.Get(csrfSessionKey); ok {
 		return fmt.Sprint(tok)
 	}
-	tok := generateCSRFToken()
+	tok, err := generateCSRFToken()
+	if err != nil {
+		// Fail closed: never store a predictable token. With no stored token the
+		// CSRF middleware rejects mutating requests until generation succeeds.
+		return ""
+	}
 	sess.Set(csrfSessionKey, tok)
 	return tok
 }
 
-func generateCSRFToken() string {
+func generateCSRFToken() (string, error) {
 	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // secureCompare compares two strings in constant time (prevent timing attacks).
+// An empty stored or request token never matches, so a fail-closed (empty)
+// token can never validate.
 func secureCompare(a, b string) bool {
-	if len(a) != len(b) {
+	if a == "" || b == "" {
 		return false
 	}
-	var diff byte
-	for i := 0; i < len(a); i++ {
-		diff |= a[i] ^ b[i]
-	}
-	return diff == 0
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

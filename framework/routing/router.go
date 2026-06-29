@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 
@@ -164,37 +165,63 @@ func (r *Router) Routes() []*Route {
 
 // ServeHTTP implements http.Handler so Router can be passed directly to http.Server.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.mu.RLock()
-	routes := r.routes[req.Method]
-	globalMW := r.middleware
-	r.mu.RUnlock()
-
-	var (
-		matchedCR *compiledRoute
-		params    map[string]string
-	)
+	// Clean up any multipart temp files spilled to disk once the request ends;
+	// net/http does not remove them automatically.
+	defer func() {
+		if req.MultipartForm != nil {
+			_ = req.MultipartForm.RemoveAll()
+		}
+	}()
 
 	path := req.URL.Path
 	if path == "" {
 		path = "/"
 	}
 
-	for _, cr := range routes {
-		if p, ok := cr.match(path); ok {
-			matchedCR = cr
-			params = p
-			break
-		}
+	// All access to the routes map happens under the read lock (route matching
+	// AND the allowed-methods scan), so a concurrent route registration can
+	// never race with a lock-free map iteration. The lock is released before any
+	// middleware/handler runs.
+	r.mu.RLock()
+	globalMW := r.middleware
+	matchedCR, params := matchRoute(r.routes[req.Method], path)
+	headFallback := false
+	if matchedCR == nil && req.Method == http.MethodHead {
+		// Implicit HEAD → GET: serve the GET handler with the body discarded.
+		matchedCR, params = matchRoute(r.routes[http.MethodGet], path)
+		headFallback = true
 	}
-
-	c := onihttp.NewContext(w, req, params)
+	var allowed []string
+	if matchedCR == nil {
+		allowed = allowedMethods(r.routes, path)
+	}
+	r.mu.RUnlock()
 
 	if matchedCR == nil {
-		if err := r.runWithMiddleware(c, globalMW, r.notFoundHandler); err != nil {
+		// The path may exist under other methods → 405 / auto-OPTIONS rather than
+		// 404. Both run through the global middleware so that, e.g., the CORS
+		// middleware can answer preflight (OPTIONS) requests itself.
+		c := onihttp.NewContext(w, req, nil)
+		var handler onihttp.HandlerFunc
+		if len(allowed) > 0 {
+			if req.Method == http.MethodOptions {
+				handler = autoOptions(allowed)
+			} else {
+				handler = methodNotAllowed(allowed)
+			}
+		} else {
+			handler = r.notFoundHandler
+		}
+		if err := r.runWithMiddleware(c, globalMW, handler); err != nil {
 			r.errorHandler(c, err)
 		}
 		return
 	}
+
+	if headFallback {
+		w = &headWriter{ResponseWriter: w}
+	}
+	c := onihttp.NewContext(w, req, params)
 
 	// Build middleware chain: global → route-level → handler
 	allMW := make([]onihttp.MiddlewareFunc, 0, len(globalMW)+len(matchedCR.middleware))
@@ -205,6 +232,69 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.errorHandler(c, err)
 	}
 }
+
+// matchRoute returns the first compiled route that matches path, with params.
+func matchRoute(routes []*compiledRoute, path string) (*compiledRoute, map[string]string) {
+	for _, cr := range routes {
+		if p, ok := cr.match(path); ok {
+			return cr, p
+		}
+	}
+	return nil, nil
+}
+
+// allowedMethods returns the sorted set of HTTP methods registered for path.
+func allowedMethods(byMethod map[string][]*compiledRoute, path string) []string {
+	var methods []string
+	for method, routes := range byMethod {
+		if cr, _ := matchRoute(routes, path); cr != nil {
+			methods = append(methods, method)
+		}
+	}
+	// Advertise HEAD wherever GET is allowed (implicit HEAD support).
+	hasGet, hasHead := false, false
+	for _, m := range methods {
+		if m == http.MethodGet {
+			hasGet = true
+		}
+		if m == http.MethodHead {
+			hasHead = true
+		}
+	}
+	if hasGet && !hasHead {
+		methods = append(methods, http.MethodHead)
+	}
+	sort.Strings(methods)
+	return methods
+}
+
+func methodNotAllowed(allowed []string) onihttp.HandlerFunc {
+	return func(c *onihttp.Context) error {
+		c.Response.Header().Set("Allow", strings.Join(allowed, ", "))
+		return c.JSON(http.StatusMethodNotAllowed, onihttp.Map{
+			"error":   "method not allowed",
+			"allowed": allowed,
+		})
+	}
+}
+
+// autoOptions answers an OPTIONS request for a known path with 204 + Allow,
+// unless an earlier middleware (e.g. CORS) already handled it.
+func autoOptions(allowed []string) onihttp.HandlerFunc {
+	return func(c *onihttp.Context) error {
+		if c.Response.Committed() {
+			return nil
+		}
+		c.Response.Header().Set("Allow", strings.Join(allowed, ", "))
+		return c.NoContent()
+	}
+}
+
+// headWriter discards the response body so a GET handler can serve a HEAD
+// request without sending a payload (headers and status still flow).
+type headWriter struct{ http.ResponseWriter }
+
+func (h *headWriter) Write(b []byte) (int, error) { return len(b), nil }
 
 func (r *Router) runWithMiddleware(c *onihttp.Context, mw []onihttp.MiddlewareFunc, h onihttp.HandlerFunc) error {
 	final := h

@@ -34,7 +34,11 @@ type Context struct {
 	handler HandlerFunc
 
 	// store is a per-request key-value bag for passing data between middleware/handlers.
-	mu    sync.RWMutex
+	// mu is a pointer so that a Context produced by WithContext shares the SAME
+	// lock as the original (they also share the store map). Embedding the mutex
+	// by value would let `clone := *c` copy a live lock — a data race flagged by
+	// `go vet` and triggered in practice by the Timeout middleware.
+	mu    *sync.RWMutex
 	store map[string]any
 
 	// ctx is the underlying context.Context (carries deadlines, cancellations, values).
@@ -47,6 +51,7 @@ func NewContext(w http.ResponseWriter, r *http.Request, params map[string]string
 	return &Context{
 		Request:  newRequest(r, params),
 		Response: newResponse(w),
+		mu:       &sync.RWMutex{},
 		store:    make(map[string]any),
 		ctx:      r.Context(),
 	}

@@ -3,8 +3,9 @@ import { getUser } from './auth.ts'
 import { navigate } from './router.ts'
 import type { Message, Conversation } from './types.ts'
 import { avatar, timeAgo, escapeHTML } from './feed.ts'
+import { OniSocket } from '@oniworks/socket'
 
-let dmWs: WebSocket | null = null
+let dmSocket: OniSocket | null = null
 let dmCallbacks: Array<(msg: any) => void> = []
 
 // ─── Page ─────────────────────────────────────────────────────────
@@ -230,26 +231,13 @@ function openNewDMModal(_root: HTMLElement) {
 // ─── Realtime ─────────────────────────────────────────────────────
 
 export function initRealtimeDMs(userID: number, token: string, opts: { onMessage: () => void }) {
-  if (dmWs) return
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  dmWs = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`)
-
-  dmWs.addEventListener('open', () => {
-    dmWs!.send(JSON.stringify({ type: 'subscribe', channel: `dm.${userID}` }))
-  })
-
-  dmWs.addEventListener('message', (e) => {
-    try {
-      const event = JSON.parse(e.data as string)
-      if (event.type === 'broadcast' && event.channel?.startsWith('dm.')) {
-        opts.onMessage()
-        dmCallbacks.forEach(cb => cb(event.data))
-      }
-    } catch { /* ignore */ }
-  })
-
-  dmWs.addEventListener('close', () => {
-    dmWs = null
-    setTimeout(() => initRealtimeDMs(userID, token, opts), 3000)
+  if (dmSocket) return
+  // OniSocket handles subscribe (the server authorizes the dm.{user_id} channel),
+  // auto-reconnect, heartbeat, and resume.
+  dmSocket = new OniSocket('/ws', { token })
+  dmSocket.channel(`dm.${userID}`).on('broadcast', (e) => {
+    opts.onMessage()
+    const data = (e.payload as { event?: string; data?: unknown } | undefined)?.data
+    dmCallbacks.forEach(cb => cb(data))
   })
 }

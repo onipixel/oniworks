@@ -211,10 +211,13 @@ func (m *Manager) mysqlDumpCmd(ctx context.Context) *exec.Cmd {
 		fmt.Sprintf("-h%s", m.cfg.Host),
 		fmt.Sprintf("-P%d", m.cfg.Port),
 		fmt.Sprintf("-u%s", m.cfg.User),
-		fmt.Sprintf("-p%s", m.cfg.Password),
 		m.cfg.DBName,
 	}
-	return exec.CommandContext(ctx, "mysqldump", args...)
+	cmd := exec.CommandContext(ctx, "mysqldump", args...)
+	// Pass the password via MYSQL_PWD env instead of "-p<pw>" on argv, where it
+	// would be visible to any local user via `ps`/proc.
+	cmd.Env = append(os.Environ(), "MYSQL_PWD="+m.cfg.Password)
+	return cmd
 }
 
 func (m *Manager) mysqlCmd(ctx context.Context) *exec.Cmd {
@@ -222,10 +225,11 @@ func (m *Manager) mysqlCmd(ctx context.Context) *exec.Cmd {
 		fmt.Sprintf("-h%s", m.cfg.Host),
 		fmt.Sprintf("-P%d", m.cfg.Port),
 		fmt.Sprintf("-u%s", m.cfg.User),
-		fmt.Sprintf("-p%s", m.cfg.Password),
 		m.cfg.DBName,
 	}
-	return exec.CommandContext(ctx, "mysql", args...)
+	cmd := exec.CommandContext(ctx, "mysql", args...)
+	cmd.Env = append(os.Environ(), "MYSQL_PWD="+m.cfg.Password)
+	return cmd
 }
 
 // ─────────────────────────── Log writer ───────────────────────────

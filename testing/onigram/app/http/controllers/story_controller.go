@@ -23,7 +23,7 @@ func (ctrl *StoryController) Feed(c *onihttp.Context) error {
 
 	stories := make([]models.Story, 0)
 	err := database.Table("stories").
-		Select("DISTINCT stories.*").
+		SelectRaw("DISTINCT stories.*").
 		LeftJoin("follows ON follows.following_id = stories.user_id").
 		Where("(follows.follower_id = ? OR stories.user_id = ?) AND stories.expires_at > NOW()", userID, userID).
 		OrderBy("stories.created_at DESC").

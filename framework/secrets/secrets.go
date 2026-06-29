@@ -8,8 +8,10 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+
 	"encoding/base64"
 	"fmt"
+	"golang.org/x/crypto/scrypt"
 	"io"
 	"os"
 	"strings"
@@ -34,9 +36,13 @@ func New(appKey string) (*Manager, error) {
 			return nil, err
 		}
 	} else {
-		// Derive a 32-byte key from the app key string via SHA-256
-		h := sha256.Sum256([]byte(appKey))
-		key = h[:]
+		// Honor base64:/hex/passphrase forms via ParseKey (previously this path
+		// SHA-256'd the whole string, ignoring the base64: prefix).
+		k, err := ParseKey(appKey)
+		if err != nil {
+			return nil, err
+		}
+		key = k
 	}
 	return &Manager{
 		appKey:  key,
@@ -166,7 +172,23 @@ func ParseKey(s string) ([]byte, error) {
 		}
 		return b, nil
 	}
-	// Treat as raw string and derive via SHA-256
-	h := sha256.Sum256([]byte(s))
-	return h[:], nil
+	// Treat as a passphrase and stretch it with a KDF (scrypt) rather than a
+	// single SHA-256, so a weak APP_KEY is far costlier to brute-force.
+	return deriveKey(s), nil
+}
+
+// scryptSalt is fixed because the derived key MUST be reproducible across
+// restarts to decrypt previously-encrypted data; the work factor (not the salt)
+// provides brute-force resistance. Prefer a base64: 32-byte random key in
+// production (see GenerateKey) over a passphrase.
+const scryptSalt = "oniworks/secrets/kdf/v1"
+
+func deriveKey(passphrase string) []byte {
+	k, err := scrypt.Key([]byte(passphrase), []byte(scryptSalt), 1<<15, 8, 1, 32)
+	if err != nil {
+		// Parameters are constant and valid; this path is unreachable in practice.
+		h := sha256.Sum256([]byte(passphrase))
+		return h[:]
+	}
+	return k
 }

@@ -2,13 +2,25 @@ package memory
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/subtle"
+	"encoding/binary"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
 	"time"
 )
+
+// maxGossipMsgBytes caps a single decoded gossip message to bound memory use
+// from a hostile or buggy peer.
+const maxGossipMsgBytes = 8 << 20 // 8 MiB
+
+// handshakeTimeout bounds the auth exchange so a silent peer cannot hold a
+// connection (and an accept slot) open indefinitely.
+const handshakeTimeout = 10 * time.Second
 
 // gossipMsg is the wire format for peer-to-peer sync messages.
 type gossipMsg struct {
@@ -26,25 +38,135 @@ type gossipTransport struct {
 	store    *Store
 	bindAddr string
 	peers    []string
-	conns    map[string]net.Conn
+	secret   string
+	conns    map[string]*peerConn
 	mu       sync.RWMutex
 	listener net.Listener
 	done     chan struct{}
 	logger   *slog.Logger
 }
 
-func newGossipTransport(store *Store, bindAddr string, peers []string) *gossipTransport {
+// peerConn wraps a peer connection and serializes writes with a lock. Each
+// gossip message is gob-encoded into its own length-framed blob and written
+// atomically under the lock, so concurrent broadcasts can never interleave
+// their bytes on the wire (the previous code created a fresh encoder per
+// broadcast on a shared conn, corrupting the stream).
+type peerConn struct {
+	conn net.Conn
+	mu   sync.Mutex
+}
+
+func (p *peerConn) send(msg gossipMsg) error {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(msg); err != nil {
+		return err
+	}
+	if buf.Len() > maxGossipMsgBytes {
+		return fmt.Errorf("gossip: message too large: %d bytes", buf.Len())
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return writeMsgFrame(p.conn, buf.Bytes())
+}
+
+// writeMsgFrame writes a 4-byte big-endian length prefix followed by b.
+func writeMsgFrame(w io.Writer, b []byte) error {
+	var hdr [4]byte
+	binary.BigEndian.PutUint32(hdr[:], uint32(len(b)))
+	if _, err := w.Write(hdr[:]); err != nil {
+		return err
+	}
+	_, err := w.Write(b)
+	return err
+}
+
+// readMsgFrame reads a 4-byte length-prefixed frame, rejecting oversized ones.
+func readMsgFrame(r io.Reader) ([]byte, error) {
+	var hdr [4]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+		return nil, err
+	}
+	n := int(binary.BigEndian.Uint32(hdr[:]))
+	if n > maxGossipMsgBytes {
+		return nil, fmt.Errorf("gossip: frame too large: %d > %d", n, maxGossipMsgBytes)
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func newGossipTransport(store *Store, bindAddr string, peers []string, secret string) *gossipTransport {
 	g := &gossipTransport{
 		store:    store,
 		bindAddr: bindAddr,
 		peers:    peers,
-		conns:    make(map[string]net.Conn),
+		secret:   secret,
+		conns:    make(map[string]*peerConn),
 		done:     make(chan struct{}),
 		logger:   slog.Default(),
+	}
+	if secret == "" {
+		g.logger.Warn("gossip: running WITHOUT authentication — any host that can reach " +
+			"BindAddr can read and inject data. Set Options.GossipSecret on every node.")
 	}
 	go g.listen()
 	go g.connectToPeers()
 	return g
+}
+
+// handshake authenticates a freshly established connection by exchanging the
+// pre-shared secret in both directions. It is a no-op when no secret is
+// configured. Returns an error (and the caller closes the conn) on mismatch.
+func (g *gossipTransport) handshake(conn net.Conn) error {
+	if g.secret == "" {
+		return nil
+	}
+	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	defer conn.SetDeadline(time.Time{})
+
+	// Send our secret length-prefixed.
+	if err := writeFrame(conn, []byte(g.secret)); err != nil {
+		return fmt.Errorf("gossip: handshake write: %w", err)
+	}
+	// Read the peer's secret and compare in constant time.
+	peer, err := readFrame(conn, len(g.secret)+1)
+	if err != nil {
+		return fmt.Errorf("gossip: handshake read: %w", err)
+	}
+	if subtle.ConstantTimeCompare(peer, []byte(g.secret)) != 1 {
+		return fmt.Errorf("gossip: handshake rejected: peer secret mismatch")
+	}
+	return nil
+}
+
+// writeFrame writes a 2-byte big-endian length prefix followed by b.
+func writeFrame(w io.Writer, b []byte) error {
+	var hdr [2]byte
+	binary.BigEndian.PutUint16(hdr[:], uint16(len(b)))
+	if _, err := w.Write(hdr[:]); err != nil {
+		return err
+	}
+	_, err := w.Write(b)
+	return err
+}
+
+// readFrame reads a length-prefixed frame, rejecting anything larger than max.
+func readFrame(r io.Reader, max int) ([]byte, error) {
+	var hdr [2]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+		return nil, err
+	}
+	n := int(binary.BigEndian.Uint16(hdr[:]))
+	if n > max {
+		return nil, fmt.Errorf("frame too large: %d > %d", n, max)
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 // listen accepts incoming peer connections.
@@ -68,8 +190,18 @@ func (g *gossipTransport) listen() {
 				continue
 			}
 		}
-		go g.handleConn(conn)
+		go g.handleInbound(conn)
 	}
+}
+
+// handleInbound authenticates an accepted peer connection, then reads from it.
+func (g *gossipTransport) handleInbound(conn net.Conn) {
+	if err := g.handshake(conn); err != nil {
+		g.logger.Warn("gossip: rejecting inbound peer", "remote", conn.RemoteAddr(), "error", err)
+		_ = conn.Close()
+		return
+	}
+	g.readLoop(conn)
 }
 
 // connectToPeers establishes and maintains outbound connections to known peers.
@@ -93,12 +225,20 @@ func (g *gossipTransport) maintainConn(addr string) {
 			continue
 		}
 
+		if err := g.handshake(conn); err != nil {
+			g.logger.Warn("gossip: peer auth failed", "addr", addr, "error", err)
+			_ = conn.Close()
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		pc := &peerConn{conn: conn}
 		g.mu.Lock()
-		g.conns[addr] = conn
+		g.conns[addr] = pc
 		g.mu.Unlock()
 
 		g.logger.Info("gossip: connected to peer", "addr", addr)
-		g.handleConn(conn) // blocks until connection closes
+		g.readLoop(conn) // blocks until connection closes
 
 		g.mu.Lock()
 		delete(g.conns, addr)
@@ -109,13 +249,19 @@ func (g *gossipTransport) maintainConn(addr string) {
 	}
 }
 
-// handleConn reads gossip messages from a connection and applies them.
-func (g *gossipTransport) handleConn(conn net.Conn) {
+// readLoop reads length-framed gossip messages from a connection and applies
+// them. Each frame is size-bounded and decoded independently.
+func (g *gossipTransport) readLoop(conn net.Conn) {
 	defer conn.Close()
-	dec := gob.NewDecoder(bufio.NewReader(conn))
+	r := bufio.NewReader(conn)
 	for {
+		frame, err := readMsgFrame(r)
+		if err != nil {
+			return
+		}
 		var msg gossipMsg
-		if err := dec.Decode(&msg); err != nil {
+		if err := gob.NewDecoder(bytes.NewReader(frame)).Decode(&msg); err != nil {
+			g.logger.Warn("gossip: bad message frame", "error", err)
 			return
 		}
 		g.applyMsg(msg)
@@ -136,19 +282,18 @@ func (g *gossipTransport) applyMsg(msg gossipMsg) {
 // broadcast sends a gossip message to all connected peers.
 func (g *gossipTransport) broadcast(msg gossipMsg) {
 	g.mu.RLock()
-	conns := make([]net.Conn, 0, len(g.conns))
+	conns := make([]*peerConn, 0, len(g.conns))
 	for _, c := range g.conns {
 		conns = append(conns, c)
 	}
 	g.mu.RUnlock()
 
-	for _, conn := range conns {
-		go func(c net.Conn) {
-			enc := gob.NewEncoder(c)
-			if err := enc.Encode(msg); err != nil {
+	for _, pc := range conns {
+		go func(p *peerConn) {
+			if err := p.send(msg); err != nil {
 				g.logger.Warn("gossip: broadcast error", "error", err)
 			}
-		}(conn)
+		}(pc)
 	}
 }
 
@@ -177,7 +322,7 @@ func (g *gossipTransport) stop() {
 	}
 	g.mu.Lock()
 	for _, c := range g.conns {
-		_ = c.Close()
+		_ = c.conn.Close()
 	}
 	g.mu.Unlock()
 }

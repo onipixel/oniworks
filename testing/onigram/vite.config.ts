@@ -1,9 +1,16 @@
 import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
+import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   publicDir: false,
   plugins: [tailwindcss()],
+  resolve: {
+    alias: {
+      // Use the framework's official realtime client straight from source.
+      '@oniworks/socket': fileURLToPath(new URL('../../client/oni-socket.ts', import.meta.url)),
+    },
+  },
   build: {
     outDir: 'public/build',
     emptyOutDir: true,

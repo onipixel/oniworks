@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/onipixel/oniworks/stubs"
 	"github.com/spf13/cobra"
 )
 
@@ -494,10 +495,9 @@ func runAppCommand(cmd string) error {
 }
 
 func makeStub(kind, name string) error {
-	stubPath := filepath.Join("stubs", kind+".stub")
-	content, err := os.ReadFile(stubPath)
+	content, err := stubs.Read(kind)
 	if err != nil {
-		return fmt.Errorf("stub not found: %s/stubs/%s.stub", ".", kind)
+		return err
 	}
 	tmpl, err := template.New(kind).Parse(string(content))
 	if err != nil {
@@ -725,17 +725,21 @@ import (
 
 func main() {
 	// Handle oni CLI sub-commands forwarded by the oni binary (e.g. oni migrate).
-	for _, arg := range os.Args[1:] {
-		if strings.HasPrefix(arg, "--oni-cmd=") {
-			cmd := strings.TrimPrefix(arg, "--oni-cmd=")
-			if err := handleOniCmd(cmd); err != nil {
-				fmt.Fprintln(os.Stderr, "oni error:", err)
-				os.Exit(1)
-			}
-			return
+	if cmd, ok := oniCommand(os.Args); ok {
+		if err := runOniCmd(cmd); err != nil {
+			fmt.Fprintln(os.Stderr, "oni error:", err)
+			os.Exit(1)
 		}
+		return
 	}
 
+	buildApp().Serve()
+}
+
+// buildApp constructs and configures the application (middleware + routes)
+// WITHOUT serving, so the same wiring is reused by the server and by CLI
+// commands such as ` + "`route:list`" + `.
+func buildApp() *app.Application {
 	oni := app.New()
 	oni.Load(".env", "config/app.yaml")
 
@@ -745,48 +749,52 @@ func main() {
 		middleware.CORS(),
 	)
 
-	oni.Route(func(r *routing.Router) {
-		r.Get("/", func(c *onihttp.Context) error {
-			return c.JSON(200, map[string]any{
-				"message": "Welcome to {{.Name}}!",
-				"powered": "OniWorks",
-			})
-		})
-
-		r.Group("/api/v1", func(g *routing.Group) {
-			// Register routes here, e.g.:
-			// g.Get("/users", userCtrl.Index)
-		})
-	})
-
-	oni.Serve()
+	oni.Route(registerRoutes)
+	return oni
 }
 
-// handleOniCmd dispatches framework commands (migrate, rollback, etc.) forwarded
-// from the oni CLI binary via the --oni-cmd flag.
-func handleOniCmd(cmd string) error {
-	_ = config.LoadEnv(".env")
-	port, _ := strconv.Atoi(oniEnv("DB_PORT", "5432"))
-	db, err := database.Open(database.Config{
-		Driver:   database.Driver(oniEnv("DB_DRIVER", "postgres")),
-		Host:     oniEnv("DB_HOST", "127.0.0.1"),
-		Port:     port,
-		Name:     oniEnv("DB_NAME", "{{.Name}}"),
-		User:     oniEnv("DB_USER", "postgres"),
-		Password: oniEnv("DB_PASSWORD", ""),
-		SSLMode:  "disable",
-		MaxOpen:  5,
-		MaxIdle:  2,
+func registerRoutes(r *routing.Router) {
+	r.Get("/", func(c *onihttp.Context) error {
+		return c.JSON(200, map[string]any{
+			"message": "Welcome to {{.Name}}!",
+			"powered": "OniWorks",
+		})
 	})
+
+	r.Group("/api/v1", func(g *routing.Group) {
+		// Register routes here, e.g.:
+		// g.Get("/users", userCtrl.Index)
+	})
+}
+
+func oniCommand(args []string) (string, bool) {
+	for _, arg := range args[1:] {
+		if strings.HasPrefix(arg, "--oni-cmd=") {
+			return strings.TrimPrefix(arg, "--oni-cmd="), true
+		}
+	}
+	return "", false
+}
+
+// runOniCmd dispatches framework commands forwarded from the oni CLI binary via
+// the --oni-cmd flag.
+func runOniCmd(cmd string) error {
+	// route:list only needs the configured router — no database required.
+	if cmd == "route:list" {
+		return listRoutes(buildApp())
+	}
+
+	_ = config.LoadEnv(".env")
+	db, err := openDB()
 	if err != nil {
 		return fmt.Errorf("database connect: %w", err)
 	}
 	defer db.Close()
 
+	ctx := context.Background()
 	m := migrations.New(db.SQLDB(), string(db.Driver()))
 	m.LoadRegistry()
 
-	ctx := context.Background()
 	switch cmd {
 	case "migrate":
 		return m.Migrate(ctx)
@@ -808,10 +816,45 @@ func handleOniCmd(cmd string) error {
 			}
 			fmt.Printf("%-60s %s\n", s.Name, status)
 		}
+		return nil
+	case "health":
+		if err := db.SQLDB().PingContext(ctx); err != nil {
+			return fmt.Errorf("health: database unreachable: %w", err)
+		}
+		fmt.Println("health: ok (database reachable)")
+		return nil
 	default:
-		fmt.Printf("[oni] command received: %s\n", cmd)
+		// Honest message instead of pretending the command succeeded. These
+		// commands need app-specific registrations (seeders, jobs, scheduled
+		// tasks) — wire them here as your project grows.
+		return fmt.Errorf("oni: %q is not wired in this generated app yet — implement it in runOniCmd (main.go)", cmd)
 	}
+}
+
+func listRoutes(oni *app.Application) error {
+	routes := oni.Router.Routes()
+	fmt.Printf("%-8s %s\n", "METHOD", "PATH")
+	fmt.Println(strings.Repeat("-", 50))
+	for _, rt := range routes {
+		fmt.Printf("%-8s %s\n", rt.GetMethod(), rt.GetPath())
+	}
+	fmt.Printf("\n%d route(s)\n", len(routes))
 	return nil
+}
+
+func openDB() (*database.DB, error) {
+	port, _ := strconv.Atoi(oniEnv("DB_PORT", "5432"))
+	return database.Open(database.Config{
+		Driver:   database.Driver(oniEnv("DB_DRIVER", "postgres")),
+		Host:     oniEnv("DB_HOST", "127.0.0.1"),
+		Port:     port,
+		Name:     oniEnv("DB_NAME", "{{.Name}}"),
+		User:     oniEnv("DB_USER", "postgres"),
+		Password: oniEnv("DB_PASSWORD", ""),
+		SSLMode:  "disable",
+		MaxOpen:  5,
+		MaxIdle:  2,
+	})
 }
 
 func oniEnv(key, def string) string {

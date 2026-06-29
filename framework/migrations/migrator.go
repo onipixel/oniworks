@@ -92,27 +92,48 @@ func (m *Migrator) Migrate(ctx context.Context) error {
 
 	m.sortMigrations()
 	batch := m.nextBatch(ctx)
-	ranCount := 0
 
+	// Collect pending migrations up front.
+	var pending []namedMigration
 	for _, nm := range m.migrations {
-		if ran[nm.name] {
-			continue
+		if !ran[nm.name] {
+			pending = append(pending, nm)
 		}
+	}
+	if len(pending) == 0 {
+		m.logger.Info("nothing to migrate")
+		return nil
+	}
+
+	// Run the whole batch inside a single transaction so a failure partway
+	// through rolls the ENTIRE batch back, never leaving the schema half-applied.
+	// PostgreSQL has transactional DDL so this is fully atomic; MySQL implicitly
+	// commits each DDL statement, so there batch atomicity is best-effort.
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("migrations: begin batch: %w", err)
+	}
+	for _, nm := range pending {
 		m.logger.Info("migrating", "name", nm.name)
 		s := newSchema(m.db, m.driver)
 		nm.m.Up(s)
-		if err := s.execute(ctx); err != nil {
-			return fmt.Errorf("migrations: %s: %w", nm.name, err)
+		for _, stmt := range s.Statements() {
+			if stmt == "" {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("migrations: %s: %w\nSQL: %s", nm.name, err, stmt)
+			}
 		}
-		if err := m.recordRan(ctx, nm.name, batch); err != nil {
-			return err
+		if err := m.recordRanExec(ctx, tx, nm.name, batch); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migrations: %s: record: %w", nm.name, err)
 		}
 		m.logger.Info("migrated", "name", nm.name)
-		ranCount++
 	}
-
-	if ranCount == 0 {
-		m.logger.Info("nothing to migrate")
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("migrations: commit batch: %w", err)
 	}
 	return nil
 }
@@ -285,12 +306,22 @@ func (m *Migrator) lastBatch(ctx context.Context) (int, error) {
 	return b, row.Scan(&b)
 }
 
+// execer is the subset of *sql.DB and *sql.Tx used to record migrations, so the
+// recording can run on the batch transaction.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (m *Migrator) recordRan(ctx context.Context, name string, batch int) error {
+	return m.recordRanExec(ctx, m.db, name, batch)
+}
+
+func (m *Migrator) recordRanExec(ctx context.Context, ex execer, name string, batch int) error {
 	q := fmt.Sprintf("INSERT INTO %s (migration, batch, ran_at) VALUES (?, ?, ?)", m.quotedTable())
 	if m.driver == "postgres" {
 		q = fmt.Sprintf(`INSERT INTO %s (migration, batch, ran_at) VALUES ($1, $2, $3)`, m.quotedTable())
 	}
-	_, err := m.db.ExecContext(ctx, q, name, batch, time.Now())
+	_, err := ex.ExecContext(ctx, q, name, batch, time.Now())
 	return err
 }
 

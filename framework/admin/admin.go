@@ -31,6 +31,10 @@ type Resource struct {
 	PerPage int
 }
 
+// Authorizer decides whether a request may access the admin panel. It runs
+// before every admin route (HTML and JSON API). Return true to allow.
+type Authorizer func(r *http.Request) bool
+
 // Panel is the Oni Admin panel.
 type Panel struct {
 	db        *database.DB
@@ -38,9 +42,16 @@ type Panel struct {
 	prefix    string // URL prefix, e.g. "/admin"
 	title     string
 	tmpl      *template.Template
+	authorize Authorizer
 }
 
 // New creates an Admin panel bound to the given DB.
+//
+// The panel exposes full read/write/delete access to every registered table,
+// so it MUST be protected by an Authorizer (see WithAuth). If none is
+// configured the panel fails closed: every route returns 403 until WithAuth is
+// provided. This prevents an unauthenticated admin panel from ever shipping by
+// accident.
 func New(db *database.DB, opts ...Option) *Panel {
 	p := &Panel{
 		db:     db,
@@ -56,6 +67,34 @@ func New(db *database.DB, opts ...Option) *Panel {
 
 // Option configures the panel.
 type Option func(*Panel)
+
+// WithAuth sets the authorizer that guards every admin route. Without it the
+// panel denies all requests.
+//
+//	admin.New(db, admin.WithAuth(func(r *http.Request) bool {
+//	    return guard.IsAdmin(r) // your auth check
+//	}))
+func WithAuth(fn Authorizer) Option {
+	return func(p *Panel) { p.authorize = fn }
+}
+
+// guard wraps an admin handler with the authorizer check. If no authorizer is
+// configured, or it rejects the request, the handler responds 403 and the data
+// handler never runs.
+func (p *Panel) guard(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p.authorize == nil {
+			http.Error(w, "Oni Admin: access denied — no authorizer configured. "+
+				"Protect the panel with admin.WithAuth(...).", http.StatusForbidden)
+			return
+		}
+		if !p.authorize(r) {
+			http.Error(w, "Oni Admin: forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
 
 // WithPrefix sets the URL prefix (default: "/admin").
 func WithPrefix(prefix string) Option {
@@ -87,24 +126,24 @@ func (p *Panel) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Dashboard
-	mux.HandleFunc(p.prefix+"/", p.handleDashboard)
+	mux.HandleFunc(p.prefix+"/", p.guard(p.handleDashboard))
 
 	for _, r := range p.resources {
 		r := r
 		slug := r.Slug
 
 		// List
-		mux.HandleFunc(p.prefix+"/"+slug, func(w http.ResponseWriter, req *http.Request) {
+		mux.HandleFunc(p.prefix+"/"+slug, p.guard(func(w http.ResponseWriter, req *http.Request) {
 			p.handleList(w, req, r)
-		})
+		}))
 		// Create form
-		mux.HandleFunc(p.prefix+"/"+slug+"/new", func(w http.ResponseWriter, req *http.Request) {
+		mux.HandleFunc(p.prefix+"/"+slug+"/new", p.guard(func(w http.ResponseWriter, req *http.Request) {
 			p.handleNew(w, req, r)
-		})
+		}))
 		// Edit / Delete
-		mux.HandleFunc(p.prefix+"/"+slug+"/", func(w http.ResponseWriter, req *http.Request) {
+		mux.HandleFunc(p.prefix+"/"+slug+"/", p.guard(func(w http.ResponseWriter, req *http.Request) {
 			p.handleEdit(w, req, r)
-		})
+		}))
 	}
 
 	return mux
@@ -131,8 +170,11 @@ func (p *Panel) handleList(w http.ResponseWriter, r *http.Request, res *Resource
 	search := r.URL.Query().Get("q")
 
 	qb := p.db.Table(res.Slug)
-	if search != "" && res.Searchable != "" {
-		qb = qb.Where(res.Searchable+" ILIKE ?", "%"+search+"%")
+	if search != "" && res.Searchable != "" && res.hasColumn(res.Searchable) {
+		// res.Searchable is validated against the resource's known columns
+		// (allow-list) and quoted; the user-supplied search term stays a bound
+		// parameter, so neither piece can inject SQL.
+		qb = qb.Where(p.db.QuoteIdentifier(res.Searchable)+" ILIKE ?", "%"+search+"%")
 	}
 	qb = qb.Limit(res.PerPage).Offset((page - 1) * res.PerPage)
 
@@ -233,14 +275,14 @@ func (p *Panel) APIHandler() http.Handler {
 	for _, r := range p.resources {
 		r := r
 		slug := r.Slug
-		mux.HandleFunc("/"+slug, func(w http.ResponseWriter, req *http.Request) {
-		var rows []map[string]any
-		if err := p.db.Table(slug).Limit(r.PerPage).Scan(&rows); err != nil {
+		mux.HandleFunc("/"+slug, p.guard(func(w http.ResponseWriter, req *http.Request) {
+			var rows []map[string]any
+			if err := p.db.Table(slug).Limit(r.PerPage).Scan(&rows); err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 				return
 			}
 			writeJSON(w, http.StatusOK, rows)
-		})
+		}))
 	}
 	return mux
 }
@@ -277,6 +319,16 @@ func buildTemplates() *template.Template {
 }
 
 // ─────────────────────────── Helpers ──────────────────────────────
+
+// hasColumn reports whether name is one of the resource's registered columns.
+func (r *Resource) hasColumn(name string) bool {
+	for _, c := range r.Columns {
+		if c == name {
+			return true
+		}
+	}
+	return false
+}
 
 func exportedFields(model any) []string {
 	t := reflect.TypeOf(model)

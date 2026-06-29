@@ -155,16 +155,16 @@ err := db.Table("posts").
 
 ```go
 err := db.Transaction(func(tx *database.DB) error {
-    // Use raw SQL expressions for arithmetic updates
-    if err := tx.Table("accounts").Where("id = ?", from).
-        Update(database.Map{"balance": tx.Raw("balance - ?", amount)}); err != nil {
-        return err  // auto-rollback
+    // Update(Map{...}) always binds values as parameters, so it cannot express
+    // an in-place arithmetic update (balance = balance - amount). For that, run
+    // raw SQL with tx.Raw(...).Exec():
+    if err := tx.Raw("UPDATE accounts SET balance = balance - ? WHERE id = ?", amount, from).
+        Exec(); err != nil {
+        return err // auto-rollback
     }
-    return tx.Table("accounts").Where("id = ?", to).
-        Update(database.Map{"balance": tx.Raw("balance + ?", amount)})
+    return tx.Raw("UPDATE accounts SET balance = balance + ? WHERE id = ?", amount, to).
+        Exec()
 })
-// Note: for simple arithmetic, use db.Raw() to build an expression:
-//   db.Table("posts").Where("id = ?", id).Update(database.Map{"view_count": "view_count + 1"})
 ```
 
 ## Lifecycle Hooks

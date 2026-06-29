@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -18,6 +19,10 @@ type Job struct {
 	schedule string
 	fn       func(ctx context.Context) error
 	timeout  time.Duration
+
+	// running guards against overlapping runs: if a tick fires while a previous
+	// run of the same job is still in progress, the new run is skipped.
+	running atomic.Bool
 }
 
 // Scheduler manages cron-based scheduled tasks.
@@ -104,6 +109,20 @@ func (s *Scheduler) Stop() context.Context {
 }
 
 func (s *Scheduler) run(j *Job) {
+	// Skip if a previous run is still in progress (no self-overlap).
+	if !j.running.CompareAndSwap(false, true) {
+		s.logger.Warn("scheduler: skipping job, previous run still in progress", "name", j.name)
+		return
+	}
+	defer j.running.Store(false)
+
+	// Recover from a panicking job so it can never crash the whole process.
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("scheduler: job panicked", "name", j.name, "panic", r)
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(s.ctx, j.timeout)
 	defer cancel()
 

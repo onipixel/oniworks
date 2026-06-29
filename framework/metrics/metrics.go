@@ -5,6 +5,7 @@ package metrics
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -96,10 +97,21 @@ func New() *Registry {
 	return r
 }
 
-// Handler returns the Prometheus /metrics HTTP handler.
-func (r *Registry) Handler() http.Handler {
-	return promhttp.HandlerFor(r.reg, promhttp.HandlerOpts{
-		Registry: r.reg,
+// Handler returns the Prometheus /metrics HTTP handler, guarded by authorize.
+//
+// /metrics discloses internal route names, traffic volumes, and process detail,
+// so it must not be exposed unauthenticated. authorize runs on every scrape;
+// return true to allow. Passing nil fails closed (every request gets 403) — to
+// intentionally expose metrics without app-level auth (e.g. when the endpoint
+// is isolated at the network layer), pass a function that always returns true.
+func (r *Registry) Handler(authorize func(*http.Request) bool) http.Handler {
+	prom := promhttp.HandlerFor(r.reg, promhttp.HandlerOpts{Registry: r.reg})
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if authorize == nil || !authorize(req) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		prom.ServeHTTP(w, req)
 	})
 }
 
@@ -115,11 +127,52 @@ func (r *Registry) Middleware(next http.Handler) http.Handler {
 
 		dur := time.Since(start).Seconds()
 		status := strconv.Itoa(rw.status)
-		path := req.URL.Path
+		path := normalizePath(req.URL.Path)
 
 		r.RequestDuration.WithLabelValues(req.Method, path, status).Observe(dur)
 		r.RequestsTotal.WithLabelValues(req.Method, path, status).Inc()
 	})
+}
+
+// normalizePath collapses high-cardinality path segments (numeric IDs, UUIDs,
+// long hex/tokens) into ":id" so an attacker cannot explode Prometheus label
+// cardinality — and memory — by hitting many unique paths. This is a heuristic
+// stand-in for the matched route pattern.
+func normalizePath(p string) string {
+	if len(p) > 512 {
+		p = p[:512]
+	}
+	segs := strings.Split(p, "/")
+	for i, s := range segs {
+		if isVariableSegment(s) {
+			segs[i] = ":id"
+		}
+	}
+	return strings.Join(segs, "/")
+}
+
+func isVariableSegment(s string) bool {
+	if s == "" {
+		return false
+	}
+	digits, hexish := 0, 0
+	for _, c := range s {
+		switch {
+		case c >= '0' && c <= '9':
+			digits++
+			hexish++
+		case (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c == '-':
+			hexish++
+		}
+	}
+	// All-numeric segment (an ID), or a long hex/UUID-like token.
+	if digits == len(s) {
+		return true
+	}
+	if len(s) >= 16 && hexish == len(s) {
+		return true
+	}
+	return false
 }
 
 // MustRegister registers additional Prometheus collectors.

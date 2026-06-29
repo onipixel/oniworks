@@ -86,7 +86,9 @@ func NewFromConfig(cfg *config.Config, logger ...*slog.Logger) *Mailer {
 		Password:   cfg.String("mail.password", ""),
 		FromAddr:   cfg.String("mail.from", "noreply@app.com"),
 		FromName:   cfg.String("mail.from_name", "App"),
-		Encryption: cfg.String("mail.encryption", "none"),
+		// Default to TLS (matching New) so a missing mail.encryption setting does
+		// not silently send SMTP AUTH credentials in cleartext.
+		Encryption: cfg.String("mail.encryption", "tls"),
 	}, logger...)
 }
 

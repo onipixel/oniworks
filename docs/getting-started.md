@@ -98,7 +98,7 @@ OniWorks loads `.env` and merges it with `config/app.yaml`:
 ```env
 APP_NAME=MyApp
 APP_ENV=local
-APP_KEY=base64:your-32-byte-key-here
+APP_KEY=generate-with-oni-key-generate
 APP_URL=http://localhost:8080
 
 DB_DRIVER=postgres

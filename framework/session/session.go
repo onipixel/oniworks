@@ -185,6 +185,23 @@ func (s *Session) GetFlash(key string) (any, bool) {
 
 func (s *Session) IsNew() bool { return s.isNew }
 
+// Regenerate rotates the session ID while preserving the session data. Call it
+// on any privilege change — especially after login — to prevent session
+// fixation, where an attacker fixes a victim's pre-auth session ID and reuses
+// it once authenticated. The new ID is written to the cookie on the next Save.
+func (s *Session) Regenerate(ctx context.Context) error {
+	if s.store == nil {
+		return fmt.Errorf("session: regenerate: no store bound to session")
+	}
+	newID, err := s.store.Regenerate(ctx, s.ID)
+	if err != nil {
+		return fmt.Errorf("session: regenerate: %w", err)
+	}
+	s.ID = newID
+	s.dirty = true
+	return nil
+}
+
 // ─────────────────────────── helpers ──────────────────────────────
 
 func generateID() (string, error) {

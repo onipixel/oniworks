@@ -76,6 +76,11 @@ func (s *Schema) HasTable(ctx context.Context, table string) (bool, error) {
 	return exists, row.Scan(&exists)
 }
 
+// Statements returns the SQL statements this schema would execute. The Migrator
+// uses it to run a whole batch inside one transaction instead of committing
+// each migration independently.
+func (s *Schema) Statements() []string { return s.stmts }
+
 func (s *Schema) execute(ctx context.Context) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

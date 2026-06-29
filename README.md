@@ -106,7 +106,8 @@ r.Get("/ws", hub.Handler())
 ```
 
 ```typescript
-// Client (TypeScript)
+// Client (TypeScript) — npm install @oniworks/socket  (see client/)
+import { OniSocket } from "@oniworks/socket"
 const socket = new OniSocket("/ws")
 socket.channel("chat.general").on("chat.message", (e) => appendMessage(e.payload))
 socket.channel("chat.general").send("chat.message", { text: "hey!" })
@@ -296,6 +297,8 @@ oni make:job <Name>             Background job
 oni make:mail <Name>            Mailer
 oni make:seeder <Name>          Database seeder
 oni make:channel <Name>         WebSocket channel handler
+oni make:policy <Name>          Authorization policy
+oni make:test <Name>            Test scaffold
 oni make:resource <Name>        Controller + model + migration
 
 # Database

@@ -5,24 +5,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/onipixel/oniworks/framework/database"
 )
 
 // Seeder is the interface all seeder structs must implement.
 type Seeder interface {
-	// Run populates the database with seed data.
-	Run(ctx context.Context, db DB) error
-}
-
-// DB is a minimal interface the seeder uses to execute queries.
-// The real *database.DB satisfies this.
-type DB interface {
-	// Table returns a query builder for the given table.
-	Table(name string) interface {
-		Insert(dest any) error
-		Where(clause string, args ...any) interface {
-			Delete() error
-		}
-	}
+	// Run populates the database with seed data. It receives the live
+	// *database.DB so it has the full query-builder API (Insert, InsertMap,
+	// Table, transactions, …).
+	Run(ctx context.Context, db *database.DB) error
 }
 
 // Runner manages and executes seeders.
@@ -48,7 +40,7 @@ func (r *Runner) Register(name string, s Seeder) *Runner {
 }
 
 // Run runs all registered seeders in registration order.
-func (r *Runner) Run(ctx context.Context, db DB) error {
+func (r *Runner) Run(ctx context.Context, db *database.DB) error {
 	for _, ns := range r.seeders {
 		r.logger.Info("seeding", "name", ns.name)
 		if err := ns.s.Run(ctx, db); err != nil {
@@ -60,7 +52,7 @@ func (r *Runner) Run(ctx context.Context, db DB) error {
 }
 
 // RunOne runs a single seeder by name.
-func (r *Runner) RunOne(ctx context.Context, db DB, name string) error {
+func (r *Runner) RunOne(ctx context.Context, db *database.DB, name string) error {
 	for _, ns := range r.seeders {
 		if ns.name == name {
 			r.logger.Info("seeding", "name", ns.name)

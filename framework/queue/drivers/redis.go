@@ -35,8 +35,24 @@ func NewRedisFromClient(c *redis.Client) *Redis {
 	return &Redis{client: c}
 }
 
-func redisKey(q string) string  { return "oni:queue:" + q }
-func delayKey(q string) string  { return "oni:queue:" + q + ":delayed" }
+func redisKey(q string) string { return "oni:queue:" + q }
+func delayKey(q string) string { return "oni:queue:" + q + ":delayed" }
+
+// promoteScript atomically moves due delayed jobs to the ready list. Because the
+// whole script runs atomically in Redis, two workers cannot both promote the
+// same job: only the EVAL whose ZREM actually removes the member performs the
+// LPUSH, so a delayed job is enqueued exactly once.
+var promoteScript = redis.NewScript(`
+local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+local moved = 0
+for _, item in ipairs(items) do
+  if redis.call('ZREM', KEYS[1], item) == 1 then
+    redis.call('LPUSH', KEYS[2], item)
+    moved = moved + 1
+  end
+end
+return moved
+`)
 
 func (r *Redis) Push(ctx context.Context, q string, p *queue.Payload) error {
 	data, err := json.Marshal(p)
@@ -74,20 +90,8 @@ func (r *Redis) Pop(ctx context.Context, q string) (*queue.Payload, error) {
 }
 
 func (r *Redis) promoteDelayed(ctx context.Context, q string) {
-	now := float64(time.Now().Unix())
-	items, err := r.client.ZRangeByScore(ctx, delayKey(q), &redis.ZRangeBy{
-		Min: "-inf",
-		Max: fmt.Sprintf("%f", now),
-	}).Result()
-	if err != nil || len(items) == 0 {
-		return
-	}
-	pipe := r.client.Pipeline()
-	for _, item := range items {
-		pipe.ZRem(ctx, delayKey(q), item)
-		pipe.LPush(ctx, redisKey(q), item)
-	}
-	_, _ = pipe.Exec(ctx)
+	now := fmt.Sprintf("%d", time.Now().Unix())
+	_ = promoteScript.Run(ctx, r.client, []string{delayKey(q), redisKey(q)}, now).Err()
 }
 
 func (r *Redis) Dead(ctx context.Context, p *queue.Payload) error {

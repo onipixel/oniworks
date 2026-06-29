@@ -15,8 +15,8 @@ import (
 )
 
 type CreatePostInput struct {
-	Title   string `json:"title"   validate:"required,min:3,max:120"`
-	Content string `json:"content" validate:"required,min:10"`
+	Title   string `json:"title"   validate:"required,min=3,max=120"`
+	Content string `json:"content" validate:"required,min=10"`
 }
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
 			g.Post("/auth/login", func(c *onihttp.Context) error {
 				var in struct {
 					Email    string `json:"email"    validate:"required,email"`
-					Password string `json:"password" validate:"required,min:6"`
+					Password string `json:"password" validate:"required,min=6"`
 				}
 				if err := c.Bind(&in); err != nil {
 					return c.JSON(422, map[string]any{"error": err.Error()})

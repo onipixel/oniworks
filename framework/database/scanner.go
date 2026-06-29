@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -295,6 +296,12 @@ func convertAssign(dest, src any) error {
 			*d = int64(s)
 		case float64:
 			*d = int64(s)
+		case []byte:
+			return parseIntInto(d, string(s))
+		case string:
+			return parseIntInto(d, s)
+		default:
+			return convertErr(src, dest)
 		}
 		return nil
 	case *int:
@@ -305,6 +312,14 @@ func convertAssign(dest, src any) error {
 			*d = s
 		case float64:
 			*d = int(s)
+		case []byte, string:
+			var n int64
+			if err := convertAssign(&n, src); err != nil {
+				return err
+			}
+			*d = int(n)
+		default:
+			return convertErr(src, dest)
 		}
 		return nil
 	case *bool:
@@ -313,6 +328,12 @@ func convertAssign(dest, src any) error {
 			*d = s
 		case int64:
 			*d = s != 0
+		case []byte:
+			return parseBoolInto(d, string(s))
+		case string:
+			return parseBoolInto(d, s)
+		default:
+			return convertErr(src, dest)
 		}
 		return nil
 	case *float64:
@@ -321,12 +342,24 @@ func convertAssign(dest, src any) error {
 			*d = s
 		case int64:
 			*d = float64(s)
+		case []byte:
+			return parseFloatInto(d, string(s))
+		case string:
+			return parseFloatInto(d, s)
+		default:
+			return convertErr(src, dest)
 		}
 		return nil
 	case *time.Time:
 		switch s := src.(type) {
 		case time.Time:
 			*d = s
+		case []byte:
+			return parseTimeInto(d, string(s))
+		case string:
+			return parseTimeInto(d, s)
+		default:
+			return convertErr(src, dest)
 		}
 		return nil
 	}
@@ -345,7 +378,72 @@ func convertAssign(dest, src any) error {
 		dv.Set(sv.Convert(dv.Type()))
 		return nil
 	}
-	return fmt.Errorf("database: cannot convert %T to %T", src, dest)
+	return convertErr(src, dest)
+}
+
+// convertErr reports an unconvertible scan rather than silently leaving the
+// destination at its zero value (which would be silent data loss).
+func convertErr(src, dest any) error {
+	return fmt.Errorf("database: cannot scan %T into %T", src, dest)
+}
+
+func parseIntInto(d *int64, s string) error {
+	s = strings.TrimSpace(s)
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		// Accept values that arrive as floats (e.g. "42.0").
+		if f, ferr := strconv.ParseFloat(s, 64); ferr == nil {
+			*d = int64(f)
+			return nil
+		}
+		return fmt.Errorf("database: cannot scan %q into *int64: %w", s, err)
+	}
+	*d = n
+	return nil
+}
+
+func parseFloatInto(d *float64, s string) error {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return fmt.Errorf("database: cannot scan %q into *float64: %w", s, err)
+	}
+	*d = f
+	return nil
+}
+
+func parseBoolInto(d *bool, s string) error {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "t", "true", "1", "y", "yes":
+		*d = true
+	case "f", "false", "0", "n", "no", "":
+		*d = false
+	default:
+		return fmt.Errorf("database: cannot scan %q into *bool", s)
+	}
+	return nil
+}
+
+// timeLayouts covers the common shapes Postgres/MySQL emit for timestamp and
+// date columns when they arrive as text/[]byte.
+var timeLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02 15:04:05.999999-07",
+	"2006-01-02 15:04:05.999999",
+	"2006-01-02 15:04:05-07",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+}
+
+func parseTimeInto(d *time.Time, s string) error {
+	s = strings.TrimSpace(s)
+	for _, layout := range timeLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			*d = t
+			return nil
+		}
+	}
+	return fmt.Errorf("database: cannot scan %q into *time.Time", s)
 }
 
 func scanRows(rows *sql.Rows, dest any) error {

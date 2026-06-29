@@ -37,15 +37,30 @@ func (r *Request) Params() map[string]string {
 	return out
 }
 
-// IP returns the real client IP, considering X-Forwarded-For and X-Real-IP headers.
+// IP returns the client IP address.
+//
+// X-Forwarded-For / X-Real-IP are only honored when the direct peer
+// (RemoteAddr) is a configured trusted proxy — see SetTrustedProxies. By
+// default no proxies are trusted, so these client-controllable headers are
+// ignored and the direct peer address is returned. This prevents a client from
+// spoofing its IP to bypass IP-based rate limiting or forge audit logs.
 func (r *Request) IP() string {
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
+	peer := r.remoteIP()
+	cfg := trustedProxyConfig.Load()
+	if cfg != nil && (cfg.trustAll || ipInNets(peer, cfg.nets)) {
+		if ip := r.Header.Get("X-Real-IP"); ip != "" {
+			return strings.TrimSpace(ip)
+		}
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			ips := strings.Split(forwarded, ",")
+			return strings.TrimSpace(ips[0])
+		}
 	}
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		ips := strings.Split(forwarded, ",")
-		return strings.TrimSpace(ips[0])
-	}
+	return peer
+}
+
+// remoteIP returns the direct peer IP from RemoteAddr (host portion only).
+func (r *Request) remoteIP() string {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

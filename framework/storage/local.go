@@ -30,14 +30,26 @@ func NewLocal(root, baseURL string) (*Local, error) {
 	return &Local{root: abs, baseURL: strings.TrimRight(baseURL, "/")}, nil
 }
 
-func (l *Local) abs(path string) string {
-	// Prevent directory traversal
-	clean := filepath.Clean("/" + path)
-	return filepath.Join(l.root, clean)
+// abs resolves a caller-supplied key to an absolute path inside the storage
+// root, returning an error if the key would escape it. The leading-slash + Clean
+// step neutralizes "../" on POSIX, and ToSlash normalizes Windows separators;
+// the filepath.Rel containment check is the cross-platform backstop that also
+// rejects absolute/volume-qualified (e.g. "C:\…", "\\host\share") inputs.
+func (l *Local) abs(path string) (string, error) {
+	clean := filepath.Clean("/" + filepath.ToSlash(path))
+	joined := filepath.Join(l.root, clean)
+	rel, err := filepath.Rel(l.root, joined)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("storage/local: path %q escapes the storage root", path)
+	}
+	return joined, nil
 }
 
 func (l *Local) Put(_ context.Context, path string, r io.Reader, _ ...PutOptions) error {
-	dst := l.abs(path)
+	dst, err := l.abs(path)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("storage/local: mkdir: %w", err)
 	}
@@ -53,7 +65,11 @@ func (l *Local) Put(_ context.Context, path string, r io.Reader, _ ...PutOptions
 }
 
 func (l *Local) Get(_ context.Context, path string) (io.ReadCloser, error) {
-	f, err := os.Open(l.abs(path))
+	p, err := l.abs(path)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(p)
 	if err != nil {
 		return nil, fmt.Errorf("storage/local: open %q: %w", path, err)
 	}
@@ -61,7 +77,11 @@ func (l *Local) Get(_ context.Context, path string) (io.ReadCloser, error) {
 }
 
 func (l *Local) Delete(_ context.Context, path string) error {
-	err := os.Remove(l.abs(path))
+	p, err := l.abs(path)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(p)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -69,7 +89,11 @@ func (l *Local) Delete(_ context.Context, path string) error {
 }
 
 func (l *Local) Exists(_ context.Context, path string) (bool, error) {
-	_, err := os.Stat(l.abs(path))
+	p, err := l.abs(path)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(p)
 	if os.IsNotExist(err) {
 		return false, nil
 	}
@@ -86,9 +110,12 @@ func (l *Local) SignedURL(_ context.Context, path string, _ time.Duration) (stri
 }
 
 func (l *Local) List(_ context.Context, prefix string) ([]string, error) {
-	root := l.abs(prefix)
+	root, err := l.abs(prefix)
+	if err != nil {
+		return nil, err
+	}
 	var keys []string
-	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	werr := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -96,11 +123,15 @@ func (l *Local) List(_ context.Context, prefix string) ([]string, error) {
 		keys = append(keys, filepath.ToSlash(rel))
 		return nil
 	})
-	return keys, err
+	return keys, werr
 }
 
 func (l *Local) Size(_ context.Context, path string) (int64, error) {
-	fi, err := os.Stat(l.abs(path))
+	p, err := l.abs(path)
+	if err != nil {
+		return 0, err
+	}
+	fi, err := os.Stat(p)
 	if err != nil {
 		return 0, err
 	}

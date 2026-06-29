@@ -27,6 +27,12 @@ type Options struct {
 	// Example: []string{"10.0.0.2:7946", "10.0.0.3:7946"}
 	Peers []string
 
+	// GossipSecret is a pre-shared secret used to authenticate peer connections.
+	// Every node in a cluster must share the same value. If empty, gossip runs
+	// UNAUTHENTICATED (any host that can reach BindAddr can read and inject data)
+	// and a loud warning is logged — set this for any non-trusted network.
+	GossipSecret string
+
 	// Persist enables snapshot-to-disk on shutdown.
 	Persist bool
 	// SnapshotPath is the file path for the snapshot (default: "storage/memory.snap").
@@ -113,7 +119,7 @@ func New(opts Options) *Store {
 	if opts.RedisURL != "" {
 		s.redis = newRedisSyncAdapter(s, opts.RedisURL)
 	} else if opts.BindAddr != "" {
-		s.gossip = newGossipTransport(s, opts.BindAddr, opts.Peers)
+		s.gossip = newGossipTransport(s, opts.BindAddr, opts.Peers, opts.GossipSecret)
 	}
 
 	// Graceful shutdown
@@ -286,19 +292,45 @@ func (s *Store) Keys(pattern string) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	prefix := strings.TrimSuffix(pattern, "*")
-	matchAll := pattern == "*"
-
 	var keys []string
 	for k, e := range s.data {
 		if e.expired() {
 			continue
 		}
-		if matchAll || (pattern == k) || (strings.HasSuffix(pattern, "*") && strings.HasPrefix(k, prefix)) {
+		if globMatch(pattern, k) {
 			keys = append(keys, k)
 		}
 	}
 	return keys
+}
+
+// globMatch reports whether s matches a glob pattern where "*" matches any run
+// of characters (including none). Unlike a trailing-only prefix match, "*" may
+// appear anywhere — e.g. "oni:presence:*:conn5" matches a connection's presence
+// keys across every channel.
+func globMatch(pattern, s string) bool {
+	if pattern == "*" {
+		return true
+	}
+	if !strings.Contains(pattern, "*") {
+		return pattern == s
+	}
+	parts := strings.Split(pattern, "*")
+	// The first segment must be a prefix.
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	// Middle segments must appear in order.
+	for _, mid := range parts[1 : len(parts)-1] {
+		idx := strings.Index(s, mid)
+		if idx < 0 {
+			return false
+		}
+		s = s[idx+len(mid):]
+	}
+	// The last segment must be a suffix of what remains.
+	return strings.HasSuffix(s, parts[len(parts)-1])
 }
 
 // Count returns the number of non-expired keys matching a pattern.

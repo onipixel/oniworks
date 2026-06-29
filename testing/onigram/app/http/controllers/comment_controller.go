@@ -276,7 +276,7 @@ func enrichComments(comments []models.Comment, viewerID int64) {
 	}
 	var lcs []likeCount
 	_ = database.Table("comment_likes").
-		Select("comment_id", "COUNT(*) AS count").
+		Select("comment_id").SelectRaw("COUNT(*) AS count").
 		WhereIn("comment_id", ids...).
 		GroupBy("comment_id").
 		All(&lcs)

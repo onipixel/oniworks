@@ -98,24 +98,49 @@ func (r *Registry) Run(ctx context.Context) Response {
 	return Response{Status: overall, Checks: results, Version: r.version}
 }
 
-// Handler returns an http.HandlerFunc that serves the health report as JSON.
-// It responds with 200 if all checks pass, 503 if any fail.
+// Handler returns a PUBLIC health endpoint: it reports overall status and each
+// check's pass/fail, but strips per-check Message text (which may contain
+// database errors, hostnames, or other internal detail). Responds 200 if all
+// checks pass, 503 otherwise. For full detail use DetailedHandler behind auth.
 func (r *Registry) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
 		defer cancel()
 
 		resp := r.Run(ctx)
-
-		statusCode := http.StatusOK
-		if resp.Status == StatusFail {
-			statusCode = http.StatusServiceUnavailable
+		// Redact detail so the public endpoint never leaks internals.
+		for name, res := range resp.Checks {
+			res.Message = ""
+			resp.Checks[name] = res
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(statusCode)
-		_ = json.NewEncoder(w).Encode(resp)
+		writeHealth(w, resp)
 	}
+}
+
+// DetailedHandler returns a health endpoint that includes per-check Message
+// detail (errors, latencies). Because that detail is sensitive, the handler is
+// guarded by authorize — passing nil fails closed (403).
+func (r *Registry) DetailedHandler(authorize func(*http.Request) bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		if authorize == nil || !authorize(req) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
+		defer cancel()
+		writeHealth(w, r.Run(ctx))
+	}
+}
+
+func writeHealth(w http.ResponseWriter, resp Response) {
+	statusCode := http.StatusOK
+	if resp.Status == StatusFail {
+		statusCode = http.StatusServiceUnavailable
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // ─────────────────────────── Built-in checks ──────────────────────

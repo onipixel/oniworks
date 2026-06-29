@@ -45,18 +45,30 @@ func NewGuard(provider UserProvider, sessions *session.Manager, jwtSecret string
 // ─────────────────────────── Session Auth ──────────────────────────
 
 // Attempt verifies credentials and creates an authenticated session on success.
+//
+// On success the session ID is rotated (Regenerate) to defeat session fixation.
+// When the email is unknown a dummy bcrypt comparison is still performed so the
+// not-found path takes the same time as a wrong-password path, preventing
+// account enumeration via response timing.
 func (g *Guard) Attempt(ctx context.Context, email, password string, sess *session.Session) (User, error) {
 	user, err := g.provider.FindByEmail(ctx, email)
 	if err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
 	}
 	if user == nil {
+		_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
 		return nil, ErrInvalidCredentials
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.GetPassword()), []byte(password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
-	sess.Set("_auth_user_id", user.GetID())
+	if sess != nil {
+		// Rotate the session ID now that the principal is changing (login).
+		if err := sess.Regenerate(ctx); err != nil {
+			return nil, fmt.Errorf("auth: %w", err)
+		}
+		sess.Set("_auth_user_id", user.GetID())
+	}
 	return user, nil
 }
 
@@ -103,6 +115,9 @@ type Claims struct {
 
 // IssueToken creates a signed JWT for the given user.
 func (g *Guard) IssueToken(user User, ttl time.Duration) (string, error) {
+	if len(g.jwtSecret) < minJWTSecretLen {
+		return "", ErrJWTNotConfigured
+	}
 	claims := Claims{
 		UserID: user.GetID(),
 		Email:  user.GetEmail(),
@@ -116,13 +131,24 @@ func (g *Guard) IssueToken(user User, ttl time.Duration) (string, error) {
 }
 
 // ParseToken validates a JWT and returns the embedded Claims.
+//
+// It fails closed if the signing secret is unconfigured/too short, restricts
+// the accepted algorithm to HS256 (blocking algorithm-confusion and "alg:none"
+// attacks), and requires the token to carry an expiry so non-expiring tokens
+// are never accepted.
 func (g *Guard) ParseToken(tokenStr string) (*Claims, error) {
+	if len(g.jwtSecret) < minJWTSecretLen {
+		return nil, ErrJWTNotConfigured
+	}
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("auth: unexpected signing method %v", t.Header["alg"])
 		}
 		return g.jwtSecret, nil
-	})
+	},
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithExpirationRequired(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
 	}
@@ -161,4 +187,16 @@ var (
 	ErrInvalidCredentials = errors.New("auth: invalid email or password")
 	ErrInvalidToken       = errors.New("auth: invalid or expired token")
 	ErrUnauthenticated    = errors.New("auth: unauthenticated")
+	// ErrJWTNotConfigured is returned when a JWT operation is attempted but no
+	// (or too short a) signing secret was provided to NewGuard. An empty secret
+	// would let anyone forge tokens, so JWT operations fail closed.
+	ErrJWTNotConfigured = errors.New("auth: JWT secret not configured (must be at least 32 bytes)")
 )
+
+// minJWTSecretLen is the minimum acceptable HS256 signing-key length in bytes.
+const minJWTSecretLen = 32
+
+// dummyBcryptHash is compared against the supplied password when the account is
+// not found, so that the not-found path costs the same as a real bcrypt verify
+// (constant-time account-enumeration defense).
+var dummyBcryptHash, _ = bcrypt.GenerateFromPassword([]byte("oniworks-timing-equalizer"), bcrypt.DefaultCost)

@@ -1,0 +1,20 @@
+{
+  "name": "@oniworks/socket",
+  "version": "0.1.0",
+  "description": "Official TypeScript client for OniWorks realtime (Oni Socket) — channels, presence, auto-reconnect, and resume.",
+  "type": "module",
+  "main": "dist/oni-socket.js",
+  "module": "dist/oni-socket.js",
+  "types": "dist/oni-socket.d.ts",
+  "files": ["dist", "oni-socket.ts", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test"
+  },
+  "keywords": ["oniworks", "websocket", "realtime", "pubsub", "presence"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

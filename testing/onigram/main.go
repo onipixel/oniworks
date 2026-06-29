@@ -70,7 +70,7 @@ func main() {
 	database.SetDefault(db)
 
 	// Set up JWT guard (provider=nil since we only need IssueToken/ParseToken)
-	jwtSecret := oniEnv("APP_KEY", "change-me-in-production")
+	jwtSecret := oniEnv("APP_KEY", "change-me-in-production-min-32-bytes!!")
 	guard = auth.NewGuard(nil, nil, jwtSecret)
 
 	// Set up realtime hub with JWT auth

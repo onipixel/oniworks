@@ -4,6 +4,7 @@ package roles
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -140,18 +141,45 @@ func matchesPermission(perms map[Permission]bool, target Permission) bool {
 	return false
 }
 
+// isWildcardMatch matches a permission pattern against a target SEGMENT-BY-
+// SEGMENT (segments delimited by ":"). Only a full-segment "*" is a wildcard:
+//
+//   - "*"          matches everything
+//   - "users:*"    matches "users:create", "users:posts:edit" (any sub-permission)
+//   - "org:*:read"  matches "org:5:read"
+//
+// A partial token like "user*" is NOT a wildcard — it matches literally and so
+// will not match "users:delete". This prevents the prefix-match over-grant where
+// "user*" wrongly matched both "users:*" and unrelated "userprofile:*".
 func isWildcardMatch(pattern, target string) bool {
-	if len(pattern) == 0 {
+	if pattern == "" {
 		return false
 	}
 	if pattern == "*" {
 		return true
 	}
-	if pattern[len(pattern)-1] == '*' {
-		prefix := pattern[:len(pattern)-1]
-		return len(target) >= len(prefix) && target[:len(prefix)] == prefix
+	if pattern == target {
+		return true
 	}
-	return pattern == target
+	pSegs := strings.Split(pattern, ":")
+	tSegs := strings.Split(target, ":")
+	for i, ps := range pSegs {
+		// A trailing "*" segment matches all remaining (at least one) target segments.
+		if ps == "*" && i == len(pSegs)-1 {
+			return len(tSegs) > i
+		}
+		if i >= len(tSegs) {
+			return false
+		}
+		if ps == "*" {
+			continue // single-segment wildcard
+		}
+		if ps != tSegs[i] {
+			return false
+		}
+	}
+	// All pattern segments consumed with no trailing wildcard → lengths must match.
+	return len(pSegs) == len(tSegs)
 }
 
 // Policy is a named gate function for fine-grained authorization logic.

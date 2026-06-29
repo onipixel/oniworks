@@ -88,9 +88,9 @@ func (rb *ringBuffer) since(lastEventID string, cutoff time.Time) []*Event {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
-	var result []*Event
-	found := lastEventID == ""
-
+	// Collect the within-window events and remember where lastEventID sits.
+	var window []*Event
+	markerAt := -1
 	for i := 0; i < rb.count; i++ {
 		idx := (rb.start + i) % rb.cap
 		e := rb.events[idx]
@@ -100,13 +100,22 @@ func (rb *ringBuffer) since(lastEventID string, cutoff time.Time) []*Event {
 		if e.Ts > 0 && time.Unix(e.Ts, 0).Before(cutoff) {
 			continue
 		}
-		if !found {
-			if e.ID == lastEventID {
-				found = true
-			}
-			continue
+		window = append(window, e)
+		if lastEventID != "" && e.ID == lastEventID {
+			markerAt = len(window) - 1
 		}
-		result = append(result, e)
 	}
-	return result
+
+	switch {
+	case lastEventID == "":
+		return window
+	case markerAt >= 0:
+		// Found the client's last event → replay only what came after it.
+		return window[markerAt+1:]
+	default:
+		// The client's lastEventID has aged out of the buffer. Replay the whole
+		// in-window buffer rather than silently sending nothing — at-least-once
+		// delivery; the client dedupes by event ID.
+		return window
+	}
 }
